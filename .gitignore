@@ -1,0 +1,5 @@
+scripts/
+replays/
+bin/
+Makefile
+.DS_Store
