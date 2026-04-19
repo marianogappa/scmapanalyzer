@@ -46,14 +46,16 @@ func ReplayMap(base image.Image, debug *replaymap.DebugData) image.Image {
 			fillRect(canvas, rect, color.RGBA{R: p.R, G: p.G, B: p.B, A: 140})
 		}
 	}
-	wallStroke := color.RGBA{R: 255, G: 0, B: 0, A: 255}
-	rampStroke := color.RGBA{R: 160, G: 0, B: 255, A: 255}
-	drawCategoryTileOutlines(canvas, debug.WallMask, debug.WidthTiles, debug.HeightTiles, stepX, stepY, wallStroke)
-	drawCategoryTileOutlines(canvas, debug.RampMask, debug.WidthTiles, debug.HeightTiles, stepX, stepY, rampStroke)
+	wallFill := color.RGBA{R: 255, G: 0, B: 0, A: 255}
+	wallStroke := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	rampFill := color.RGBA{R: 160, G: 0, B: 255, A: 255}
+	rampStroke := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	drawCategoryTiles(canvas, debug.WallMask, debug.WidthTiles, debug.HeightTiles, stepX, stepY, wallFill, wallStroke)
+	drawCategoryTiles(canvas, debug.RampMask, debug.WidthTiles, debug.HeightTiles, stepX, stepY, rampFill, rampStroke)
 	return canvas
 }
 
-func drawCategoryTileOutlines(canvas *image.RGBA, mask []bool, width int, height int, stepX float64, stepY float64, stroke color.RGBA) {
+func drawCategoryTiles(canvas *image.RGBA, mask []bool, width int, height int, stepX float64, stepY float64, fill color.RGBA, stroke color.RGBA) {
 	if len(mask) == 0 || width <= 0 || height <= 0 {
 		return
 	}
@@ -65,6 +67,7 @@ func drawCategoryTileOutlines(canvas *image.RGBA, mask []bool, width int, height
 				continue
 			}
 			rect := tileRect(x, y, stepX, stepY, b)
+			fillRect(canvas, rect, fill)
 			if x == 0 || !mask[idx-1] {
 				drawVertical(canvas, rect.Min.X, rect.Min.Y, rect.Max.Y, stroke)
 			}

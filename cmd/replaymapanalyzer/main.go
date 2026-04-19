@@ -110,7 +110,6 @@ func main() {
 		}
 		outJSONPath := filepath.Join(mapOutDir, key+".json")
 		outImagePath := filepath.Join(mapOutDir, key+"-overlay.png")
-
 		if err := writeJSON(outJSONPath, out.Result); err != nil {
 			fatalf("write output json: %v", err)
 		}
