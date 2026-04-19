@@ -34,7 +34,7 @@ const (
 
 	// shapeFixedMaxDist is the max normalized ellipse distance allowed during
 	// growth. 1.0 hugs the inferred shape; >1.0 allows slight overshoot.
-	shapeFixedMaxDist = 1.08
+	shapeFixedMaxDist = 1.1
 
 	// shapeMinAxis enforces a minimum semi-axis length for tiny inferred areas.
 	shapeMinAxis = 5.0
@@ -159,10 +159,7 @@ func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutpu
 	}
 
 	if len(fallbackIndices) > 0 {
-		attempt2MaxArea := int(math.Floor(float64(minStartArea) * attempt2CapMul))
-		if attempt2MaxArea < 1 {
-			attempt2MaxArea = 1
-		}
+		attempt2MaxArea := max(int(math.Floor(float64(minStartArea)*attempt2CapMul)), 1)
 		a2blocked := make([]bool, len(startOccupied))
 		for i := range a2blocked {
 			a2blocked[i] = wallRampBarrier[i] || startOccupied[i]

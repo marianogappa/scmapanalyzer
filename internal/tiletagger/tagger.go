@@ -42,6 +42,7 @@ type accum struct {
 	occ         int
 	redCells    int
 	purpleCells int
+	yellowCells int
 }
 
 func Run(cfg Config) (*Result, error) {
@@ -77,7 +78,7 @@ func Run(cfg Config) (*Result, error) {
 		return nil, errors.New("replay tile grid mismatch")
 	}
 
-	wallIDs, rampIDs := classifyTiles(
+	wallIDs, rampIDs, walkableIDs := classifyTiles(
 		meta.Tiles,
 		meta.WidthTiles,
 		meta.HeightTiles,
@@ -92,6 +93,7 @@ func Run(cfg Config) (*Result, error) {
 		TileSetKey:  meta.TilesetKey,
 		WallTileIDs: wallIDs,
 		RampTileIDs: rampIDs,
+		WalkableIDs: walkableIDs,
 	}
 	return &Result{
 		MatchedReplayPath: replayPath,
@@ -152,7 +154,7 @@ func classifyTiles(
 	perCellThreshold float64,
 	perTileThreshold float64,
 	minCellsPerTile int,
-) ([]uint16, []uint16) {
+) ([]uint16, []uint16, []uint16) {
 	stats := map[uint16]*accum{}
 	stepX := float64(overlay.Bounds().Dx()) / float64(widthTiles)
 	stepY := float64(overlay.Bounds().Dy()) / float64(heightTiles)
@@ -168,40 +170,50 @@ func classifyTiles(
 			}
 			a.occ++
 			rect := tileRect(x, y, stepX, stepY, overlay.Bounds())
-			redRatio, purpleRatio := cellColorCoverage(overlay, rect)
+			redRatio, purpleRatio, yellowRatio := cellColorCoverage(overlay, rect)
 			if redRatio >= perCellThreshold {
 				a.redCells++
 			}
 			if purpleRatio >= perCellThreshold {
 				a.purpleCells++
 			}
+			if yellowRatio >= perCellThreshold {
+				a.yellowCells++
+			}
 		}
 	}
 
 	wallIDs := make([]uint16, 0)
 	rampIDs := make([]uint16, 0)
+	walkableIDs := make([]uint16, 0)
 	for tileID, a := range stats {
 		if a.occ < minCellsPerTile {
 			continue
 		}
 		redShare := float64(a.redCells) / float64(a.occ)
 		purpleShare := float64(a.purpleCells) / float64(a.occ)
+		yellowShare := float64(a.yellowCells) / float64(a.occ)
 		if redShare >= perTileThreshold {
 			wallIDs = append(wallIDs, tileID)
 		}
 		if purpleShare >= perTileThreshold {
 			rampIDs = append(rampIDs, tileID)
 		}
+		if yellowShare >= perTileThreshold {
+			walkableIDs = append(rampIDs, tileID)
+		}
 	}
 	sort.Slice(wallIDs, func(i int, j int) bool { return wallIDs[i] < wallIDs[j] })
 	sort.Slice(rampIDs, func(i int, j int) bool { return rampIDs[i] < rampIDs[j] })
-	return wallIDs, rampIDs
+	sort.Slice(walkableIDs, func(i int, j int) bool { return walkableIDs[i] < walkableIDs[j] })
+	return wallIDs, rampIDs, walkableIDs
 }
 
-func cellColorCoverage(img image.Image, rect image.Rectangle) (float64, float64) {
+func cellColorCoverage(img image.Image, rect image.Rectangle) (float64, float64, float64) {
 	total := 0
 	red := 0
 	purple := 0
+	yellow := 0
 	for y := rect.Min.Y; y < rect.Max.Y; y++ {
 		for x := rect.Min.X; x < rect.Max.X; x++ {
 			total++
@@ -218,12 +230,15 @@ func cellColorCoverage(img image.Image, rect image.Rectangle) (float64, float64)
 			if isBrightPurple(c) {
 				purple++
 			}
+			if isBrightYellow(c) {
+				yellow++
+			}
 		}
 	}
 	if total == 0 {
-		return 0, 0
+		return 0, 0, 0
 	}
-	return float64(red) / float64(total), float64(purple) / float64(total)
+	return float64(red) / float64(total), float64(purple) / float64(total), float64(yellow) / float64(total)
 }
 
 func isBrightRed(c color.RGBA) bool {
@@ -232,6 +247,10 @@ func isBrightRed(c color.RGBA) bool {
 
 func isBrightPurple(c color.RGBA) bool {
 	return c.R >= 140 && c.B >= 140 && c.G <= 120
+}
+
+func isBrightYellow(c color.RGBA) bool {
+	return c.R == 255 && c.B >= 251 && c.G <= 83
 }
 
 func tileRect(x int, y int, stepX float64, stepY float64, bounds image.Rectangle) image.Rectangle {
