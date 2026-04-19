@@ -13,6 +13,7 @@ type BasePolygon struct {
 	Clock            int         `json:"clock"`
 	CenterTile       TilePoint   `json:"center_tile"`
 	PolygonVertices  []TilePoint `json:"polygon_vertices"`
+	MineralOnly      bool        `json:"mineral_only"`
 	NaturalExpansion string      `json:"natural_expansion,omitempty"`
 }
 

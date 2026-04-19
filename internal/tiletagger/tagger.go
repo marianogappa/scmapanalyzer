@@ -200,7 +200,7 @@ func classifyTiles(
 			rampIDs = append(rampIDs, tileID)
 		}
 		if yellowShare >= perTileThreshold {
-			walkableIDs = append(rampIDs, tileID)
+			walkableIDs = append(walkableIDs, tileID)
 		}
 	}
 	sort.Slice(wallIDs, func(i int, j int) bool { return wallIDs[i] < wallIDs[j] })
@@ -242,15 +242,31 @@ func cellColorCoverage(img image.Image, rect image.Rectangle) (float64, float64,
 }
 
 func isBrightRed(c color.RGBA) bool {
-	return c.R >= 200 && c.G <= 100 && c.B <= 100
+	return isNearPeak(c, color.RGBA{R: 236, G: 65, B: 38, A: 255}, 40, 45, 45) &&
+		c.R >= c.G+45 && c.R >= c.B+45
 }
 
 func isBrightPurple(c color.RGBA) bool {
-	return c.R >= 140 && c.B >= 140 && c.G <= 120
+	return isNearPeak(c, color.RGBA{R: 233, G: 82, B: 249, A: 255}, 45, 50, 45) &&
+		c.R >= c.G+60 && c.B >= c.G+80
 }
 
 func isBrightYellow(c color.RGBA) bool {
-	return c.R == 255 && c.B >= 251 && c.G <= 83
+	return isNearPeak(c, color.RGBA{R: 255, G: 251, B: 83, A: 255}, 50, 50, 120) &&
+		c.R >= c.B+80 && c.G >= c.B+80
+}
+
+func isNearPeak(c color.RGBA, peak color.RGBA, tolR int, tolG int, tolB int) bool {
+	return abs(int(c.R)-int(peak.R)) <= tolR &&
+		abs(int(c.G)-int(peak.G)) <= tolG &&
+		abs(int(c.B)-int(peak.B)) <= tolB
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func tileRect(x int, y int, stepX float64, stepY float64, bounds image.Rectangle) image.Rectangle {

@@ -24,21 +24,6 @@ const (
 	// Keep at 0 unless edge bleeding appears in generated polygons.
 	startEdgeClearance = 0
 
-	// attempt2CapMul caps fallback expansion area as a fraction of the smallest
-	// detected start area. Lower values make fallback expansions more conservative.
-	attempt2CapMul = 0.88
-
-	// shapeAspectRatio is the major/minor axis ratio used by fixed oblong models.
-	// Higher values make bases longer and narrower.
-	shapeAspectRatio = 1.7
-
-	// shapeFixedMaxDist is the max normalized ellipse distance allowed during
-	// growth. 1.0 hugs the inferred shape; >1.0 allows slight overshoot.
-	shapeFixedMaxDist = 1.1
-
-	// shapeMinAxis enforces a minimum semi-axis length for tiny inferred areas.
-	shapeMinAxis = 5.0
-
 	// seedSearchRadius is how far from the center we scan for a valid seed tile
 	// when the rounded center is blocked by clearance/ownership constraints.
 	seedSearchRadius = 10
@@ -46,26 +31,11 @@ const (
 	// passableSeedSearchRadius is similar to seedSearchRadius but for pathing BFS
 	// (natural detection), where we only need a passable tile near a center.
 	passableSeedSearchRadius = 12
-
-	// orientationRadius tiles around a base center are sampled to infer the local
-	// open-area orientation used to rotate oblong shapes.
-	orientationRadius = 16
-
-	// minOrientationSamples avoids unstable covariance orientation on sparse data.
-	minOrientationSamples = 10
 )
 
 type point struct {
 	X float64
 	Y float64
-}
-
-type shapeModel struct {
-	CenterX float64
-	CenterY float64
-	Angle   float64
-	AxisA   float64
-	AxisB   float64
 }
 
 func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutput, error) {
@@ -103,87 +73,32 @@ func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutpu
 	}
 
 	startOwners := assignNearestStartAmongAllBases(meta.WidthTiles, meta.HeightTiles, bases, startBaseIdx)
+	expaOwners := assignNearest(meta.WidthTiles, meta.HeightTiles, expaCenters)
 	rampForbidden := make([]bool, len(meta.Tiles))
 	for i, t := range meta.Tiles {
 		if rampSet[t] {
 			rampForbidden[i] = true
 		}
 	}
-	orientBlockStarts := append([]bool(nil), wallOnlyBar...)
-	startMasks, minStartArea := growStartMasksOblong(
-		meta.WidthTiles,
-		meta.HeightTiles,
-		startOwners,
-		distWallClear,
-		distEdge,
-		startCenters,
-		startClearanceTiles,
-		startEdgeClearance,
-		orientBlockStarts,
-		rampForbidden,
-	)
-	if minStartArea <= 0 {
-		return nil, errors.New("invalid starting area")
+	maskOut, maskErr := buildRegionMasks(buildRegionMasksInput{
+		Width:           meta.WidthTiles,
+		Height:          meta.HeightTiles,
+		DistWR:          distWR,
+		DistEdge:        distEdge,
+		DistWallOnly:    distWallClear,
+		WallRampBarrier: wallRampBarrier,
+		WallOnlyBarrier: wallOnlyBar,
+		StartOwners:     startOwners,
+		ExpaOwners:      expaOwners,
+		StartCenters:    startCenters,
+		ExpaCenters:     expaCenters,
+		RampForbidden:   rampForbidden,
+	})
+	if maskErr != nil {
+		return nil, maskErr
 	}
-
-	startOccupied := combineMasks(meta.WidthTiles*meta.HeightTiles, startMasks)
-	expaOwners := assignNearest(meta.WidthTiles, meta.HeightTiles, expaCenters)
-	expaMasks := make([][]bool, len(expaCenters))
-	fallbackIndices := []int{}
-	attempt1Blocked := make([]bool, len(startOccupied))
-	for i := range attempt1Blocked {
-		attempt1Blocked[i] = wallRampBarrier[i] || startOccupied[i]
-	}
-	attempt1Shapes := inferFixedShapes(meta.WidthTiles, meta.HeightTiles, expaCenters, attempt1Blocked, minStartArea)
-	for ei := range expaCenters {
-		mask := growSingleRegionWithClearance(
-			meta.WidthTiles,
-			meta.HeightTiles,
-			ei,
-			expaOwners,
-			distWR,
-			distEdge,
-			expaCenters[ei],
-			startClearanceTiles,
-			startEdgeClearance,
-			startOccupied,
-			&attempt1Shapes[ei],
-			shapeFixedMaxDist,
-		)
-		area := countMask(mask)
-		if area > 0 && area <= minStartArea {
-			expaMasks[ei] = mask
-			continue
-		}
-		fallbackIndices = append(fallbackIndices, ei)
-	}
-
-	if len(fallbackIndices) > 0 {
-		attempt2MaxArea := max(int(math.Floor(float64(minStartArea)*attempt2CapMul)), 1)
-		a2blocked := make([]bool, len(startOccupied))
-		for i := range a2blocked {
-			a2blocked[i] = wallRampBarrier[i] || startOccupied[i]
-		}
-		for ei, mask := range expaMasks {
-			if mask == nil || containsInt(fallbackIndices, ei) {
-				continue
-			}
-			for i, v := range mask {
-				if v {
-					a2blocked[i] = true
-				}
-			}
-		}
-		a2Centers := make([]point, len(fallbackIndices))
-		for i, expaIdx := range fallbackIndices {
-			a2Centers[i] = expaCenters[expaIdx]
-		}
-		a2Shapes := inferFixedShapes(meta.WidthTiles, meta.HeightTiles, a2Centers, a2blocked, attempt2MaxArea)
-		a2Masks := growExpasCompetitiveFixedShape(meta.WidthTiles, meta.HeightTiles, a2Centers, a2blocked, attempt2MaxArea, a2Shapes, shapeFixedMaxDist)
-		for i, expaIdx := range fallbackIndices {
-			expaMasks[expaIdx] = a2Masks[i]
-		}
-	}
+	startMasks := maskOut.StartMasks
+	expaMasks := maskOut.ExpaMasks
 
 	naturals := computeNaturals(
 		meta.WidthTiles,
@@ -197,24 +112,28 @@ func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutpu
 	startPolys := make([]BasePolygon, len(startCenters))
 	for i := range startCenters {
 		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(startCenters[i].X*32)), int(math.Round(startCenters[i].Y*32)))
+		startMask := startMasks[i]
 		startPolys[i] = BasePolygon{
 			Name:            "start " + itoa(clock),
 			Kind:            "start",
 			Clock:           clock,
 			CenterTile:      TilePoint{X: int(math.Round(startCenters[i].X)), Y: int(math.Round(startCenters[i].Y))},
-			PolygonVertices: maskToPolygon(meta.WidthTiles, meta.HeightTiles, startMasks[i]),
+			PolygonVertices: maskToPolygon(meta.WidthTiles, meta.HeightTiles, startMask),
+			MineralOnly:     mineralOnlyMask(meta.WidthTiles, meta.HeightTiles, startMask, meta.Geysers),
 		}
 	}
 
 	expaPolys := make([]BasePolygon, len(expaCenters))
 	for i := range expaCenters {
 		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(expaCenters[i].X*32)), int(math.Round(expaCenters[i].Y*32)))
+		expaMask := expaMasks[i]
 		expaPolys[i] = BasePolygon{
 			Name:            "expa " + itoa(clock),
 			Kind:            "expa",
 			Clock:           clock,
 			CenterTile:      TilePoint{X: int(math.Round(expaCenters[i].X)), Y: int(math.Round(expaCenters[i].Y))},
-			PolygonVertices: maskToPolygon(meta.WidthTiles, meta.HeightTiles, expaMasks[i]),
+			PolygonVertices: maskToPolygon(meta.WidthTiles, meta.HeightTiles, expaMask),
+			MineralOnly:     mineralOnlyMask(meta.WidthTiles, meta.HeightTiles, expaMask, meta.Geysers),
 		}
 	}
 
@@ -275,15 +194,6 @@ func asSet(ids []uint16) map[uint16]bool {
 		out[id] = true
 	}
 	return out
-}
-
-func containsInt(values []int, target int) bool {
-	for _, v := range values {
-		if v == target {
-			return true
-		}
-	}
-	return false
 }
 
 func combineMasks(size int, masks [][]bool) []bool {
@@ -415,43 +325,12 @@ func assignNearestStartAmongAllBases(width int, height int, bases []model.Base, 
 func growRegionsWithClearance(width int, height int, owners []int, distClear []int, distEdge []int, centers []point, clearance int, edgeClearance int, forbidden []bool) [][]bool {
 	regions := make([][]bool, len(centers))
 	for i := range centers {
-		regions[i] = growSingleRegionWithClearance(width, height, i, owners, distClear, distEdge, centers[i], clearance, edgeClearance, forbidden, nil, 0)
+		regions[i] = growSingleRegionWithClearance(width, height, i, owners, distClear, distEdge, centers[i], clearance, edgeClearance, forbidden)
 	}
 	return regions
 }
 
-// growStartMasksOblong first grows unconstrained Voronoi start regions to find the smallest
-// footprint among players (same budget idea as expansion attempt 1), then regrows each
-// start as the intersection of that Voronoi cell with a centroid-based oblong
-// (inferFixedShapes + shapeDistance), matching expansion geometry.
-func growStartMasksOblong(width int, height int, owners []int, distClear []int, distEdge []int, centers []point, clearance int, edgeClearance int, orientBlocked []bool, forbidden []bool) ([][]bool, int) {
-	prelim := growRegionsWithClearance(width, height, owners, distClear, distEdge, centers, clearance, edgeClearance, forbidden)
-	minPre := minPositive(regionAreas(prelim))
-	if minPre <= 0 {
-		return nil, 0
-	}
-	shapes := inferFixedShapes(width, height, centers, orientBlocked, minPre)
-	out := make([][]bool, len(centers))
-	for i := range centers {
-		out[i] = growSingleRegionWithClearance(
-			width,
-			height,
-			i,
-			owners,
-			distClear,
-			distEdge,
-			centers[i],
-			clearance,
-			edgeClearance,
-			forbidden,
-			&shapes[i],
-			shapeFixedMaxDist,
-		)
-	}
-	return out, minPositive(regionAreas(out))
-}
-
-func growSingleRegionWithClearance(width int, height int, owner int, owners []int, distClear []int, distEdge []int, center point, clearance int, edgeClearance int, forbidden []bool, shape *shapeModel, maxShapeDist float64) []bool {
+func growSingleRegionWithClearance(width int, height int, owner int, owners []int, distClear []int, distEdge []int, center point, clearance int, edgeClearance int, forbidden []bool) []bool {
 	mask := make([]bool, width*height)
 	seedX := clampInt(int(math.Round(center.X)), 0, width-1)
 	seedY := clampInt(int(math.Round(center.Y)), 0, height-1)
@@ -480,9 +359,6 @@ func growSingleRegionWithClearance(width int, height int, owner int, owners []in
 			if forbidden != nil && forbidden[nidx] {
 				continue
 			}
-			if shape != nil && shapeDistance(center, *shape, nx, ny) > maxShapeDist {
-				continue
-			}
 			mask[nidx] = true
 			queue = append(queue, nidx)
 		}
@@ -508,190 +384,6 @@ func findSeed(width int, height int, owners []int, distClear []int, distEdge []i
 					continue
 				}
 				return xx, yy, true
-			}
-		}
-	}
-	return 0, 0, false
-}
-
-func inferFixedShapes(width int, height int, centers []point, blocked []bool, maxArea int) []shapeModel {
-	shapes := make([]shapeModel, len(centers))
-	for i, c := range centers {
-		angle := localOrientation(width, height, c, blocked, orientationRadius)
-		axisB := math.Sqrt(float64(maxArea) / (math.Pi * shapeAspectRatio))
-		axisA := axisB * shapeAspectRatio
-		if axisA < shapeMinAxis {
-			axisA = shapeMinAxis
-		}
-		if axisB < shapeMinAxis {
-			axisB = shapeMinAxis
-		}
-		shapes[i] = shapeModel{CenterX: c.X, CenterY: c.Y, Angle: angle, AxisA: axisA, AxisB: axisB}
-	}
-	return shapes
-}
-
-func localOrientation(width int, height int, c point, blocked []bool, radius int) float64 {
-	cx := clampInt(int(math.Round(c.X)), 0, width-1)
-	cy := clampInt(int(math.Round(c.Y)), 0, height-1)
-	varXX := 0.0
-	varYY := 0.0
-	varXY := 0.0
-	n := 0.0
-	for y := cy - radius; y <= cy+radius; y++ {
-		if y < 0 || y >= height {
-			continue
-		}
-		for x := cx - radius; x <= cx+radius; x++ {
-			if x < 0 || x >= width {
-				continue
-			}
-			idx := y*width + x
-			if blocked[idx] {
-				continue
-			}
-			dx := float64(x-cx) + 0.5
-			dy := float64(y-cy) + 0.5
-			if dx*dx+dy*dy > float64(radius*radius) {
-				continue
-			}
-			n++
-			varXX += dx * dx
-			varYY += dy * dy
-			varXY += dx * dy
-		}
-	}
-	if n < minOrientationSamples {
-		return 0
-	}
-	varXX /= n
-	varYY /= n
-	varXY /= n
-	return 0.5 * math.Atan2(2*varXY, varXX-varYY)
-}
-
-func shapeDistance(center point, shape shapeModel, x int, y int) float64 {
-	px := float64(x) + 0.5
-	py := float64(y) + 0.5
-	cx := shape.CenterX
-	cy := shape.CenterY
-	if cx == 0 && cy == 0 {
-		cx = center.X
-		cy = center.Y
-	}
-	a := shape.AxisA
-	b := shape.AxisB
-	if a <= 0 || b <= 0 {
-		a = shapeMinAxis * shapeAspectRatio
-		b = shapeMinAxis
-	}
-	dx := px - cx
-	dy := py - cy
-	cosT := math.Cos(shape.Angle)
-	sinT := math.Sin(shape.Angle)
-	u := dx*cosT + dy*sinT
-	v := -dx*sinT + dy*cosT
-	return math.Sqrt((u*u)/(a*a) + (v*v)/(b*b))
-}
-
-func growExpasCompetitiveFixedShape(width int, height int, centers []point, blocked []bool, maxArea int, shapes []shapeModel, maxShapeDist float64) [][]bool {
-	return growExpasCompetitiveWithGate(width, height, centers, blocked, maxArea, func(i int, x int, y int, _ []bool) bool {
-		return shapeDistance(centers[i], shapes[i], x, y) <= maxShapeDist
-	})
-}
-
-func growExpasCompetitiveWithGate(width int, height int, centers []point, blocked []bool, maxArea int, allow func(i int, x int, y int, region []bool) bool) [][]bool {
-	const unclaimed = -1
-	owner := make([]int, width*height)
-	for i := range owner {
-		if blocked[i] {
-			owner[i] = -2
-		} else {
-			owner[i] = unclaimed
-		}
-	}
-	regions := make([][]bool, len(centers))
-	areas := make([]int, len(centers))
-	frontiers := make([][]int, len(centers))
-	for i := range centers {
-		regions[i] = make([]bool, width*height)
-		x := clampInt(int(math.Round(centers[i].X)), 0, width-1)
-		y := clampInt(int(math.Round(centers[i].Y)), 0, height-1)
-		x, y, ok := findUnblocked(width, height, owner, x, y)
-		if !ok {
-			continue
-		}
-		idx := y*width + x
-		owner[idx] = i
-		regions[i][idx] = true
-		areas[i] = 1
-		frontiers[i] = []int{idx}
-	}
-	for {
-		proposals := map[int][]int{}
-		for i := range centers {
-			if areas[i] >= maxArea || len(frontiers[i]) == 0 {
-				continue
-			}
-			for _, idx := range frontiers[i] {
-				x := idx % width
-				y := idx / width
-				for _, n := range [][2]int{{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}} {
-					nx, ny := n[0], n[1]
-					if nx < 0 || ny < 0 || nx >= width || ny >= height {
-						continue
-					}
-					nidx := ny*width + nx
-					if owner[nidx] != unclaimed {
-						continue
-					}
-					if !allow(i, nx, ny, regions[i]) {
-						continue
-					}
-					proposals[nidx] = appendUnique(proposals[nidx], i)
-				}
-			}
-		}
-		if len(proposals) == 0 {
-			break
-		}
-		nextFrontiers := make([][]int, len(centers))
-		progress := false
-		for nidx, who := range proposals {
-			if len(who) == 1 {
-				i := who[0]
-				if areas[i] >= maxArea || owner[nidx] != unclaimed {
-					continue
-				}
-				owner[nidx] = i
-				regions[i][nidx] = true
-				areas[i]++
-				nextFrontiers[i] = append(nextFrontiers[i], nidx)
-				progress = true
-			} else {
-				owner[nidx] = -2
-			}
-		}
-		for i := range centers {
-			frontiers[i] = nextFrontiers[i]
-		}
-		if !progress {
-			break
-		}
-	}
-	return regions
-}
-
-func findUnblocked(width int, height int, owner []int, x int, y int) (int, int, bool) {
-	for r := 0; r <= seedSearchRadius; r++ {
-		for yy := y - r; yy <= y+r; yy++ {
-			for xx := x - r; xx <= x+r; xx++ {
-				if xx < 0 || yy < 0 || xx >= width || yy >= height {
-					continue
-				}
-				if owner[yy*width+xx] == -1 {
-					return xx, yy, true
-				}
 			}
 		}
 	}
@@ -893,15 +585,6 @@ func oclock(widthTiles int, heightTiles int, x int, y int) int {
 	}
 }
 
-func appendUnique(values []int, v int) []int {
-	for _, x := range values {
-		if x == v {
-			return values
-		}
-	}
-	return append(values, v)
-}
-
 func regionAreas(regions [][]bool) []int {
 	out := make([]int, len(regions))
 	for i, m := range regions {
@@ -964,4 +647,21 @@ func itoa(v int) string {
 		digits[i], digits[j] = digits[j], digits[i]
 	}
 	return string(digits)
+}
+
+func mineralOnlyMask(width int, height int, mask []bool, geysers []model.MapResource) bool {
+	for _, g := range geysers {
+		gx := clampInt(int(math.Round(float64(g.X)/32.0)), 0, width-1)
+		gy := clampInt(int(math.Round(float64(g.Y)/32.0)), 0, height-1)
+		for oy := -1; oy <= 1; oy++ {
+			for ox := -1; ox <= 1; ox++ {
+				tx := clampInt(gx+ox, 0, width-1)
+				ty := clampInt(gy+oy, 0, height-1)
+				if mask[ty*width+tx] {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }

@@ -88,7 +88,7 @@ func main() {
 			OverlayImagePath: overlayImagePath,
 			ReplaysDir:       replaysDir,
 			PerCellThreshold: 0.45,
-			PerTileThreshold: 0.55,
+			PerTileThreshold: 0.45,
 			MinCellsPerTile:  2,
 		})
 		if runErr != nil {
@@ -147,15 +147,15 @@ func writeJSON(path string, v any) error {
 }
 
 func mergeIDs(a []uint16, b []uint16, walkable []uint16) []uint16 {
-	seen := map[uint16]bool{}
+	seen := map[uint16]struct{}{}
 	for _, id := range a {
-		seen[id] = true
+		seen[id] = struct{}{}
 	}
 	for _, id := range b {
-		seen[id] = true
+		seen[id] = struct{}{}
 	}
 	for _, id := range walkable {
-		seen[id] = false
+		delete(seen, id)
 	}
 	merged := make([]uint16, 0, len(seen))
 	for id := range seen {
