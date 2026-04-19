@@ -100,8 +100,8 @@ func main() {
 		// merge previous IDs with newly detected IDs for this tileset key.
 		existing, loadErr := tiletags.LoadByTileSetKey(tagsRepoDir, res.Tags.TileSetKey)
 		if loadErr == nil && existing != nil {
-			res.Tags.WallTileIDs = mergeIDs(existing.WallTileIDs, res.Tags.WallTileIDs)
-			res.Tags.RampTileIDs = mergeIDs(existing.RampTileIDs, res.Tags.RampTileIDs)
+			res.Tags.WallTileIDs = mergeIDs(existing.WallTileIDs, res.Tags.WallTileIDs, res.Tags.WalkableIDs)
+			res.Tags.RampTileIDs = mergeIDs(existing.RampTileIDs, res.Tags.RampTileIDs, res.Tags.WalkableIDs)
 		}
 		if loadErr != nil && !errors.Is(loadErr, os.ErrNotExist) {
 			fatalf("load existing tags for merge (%s): %v", res.Tags.TileSetKey, loadErr)
@@ -146,13 +146,16 @@ func writeJSON(path string, v any) error {
 	return os.WriteFile(path, b, 0o644)
 }
 
-func mergeIDs(a []uint16, b []uint16) []uint16 {
+func mergeIDs(a []uint16, b []uint16, walkable []uint16) []uint16 {
 	seen := map[uint16]bool{}
 	for _, id := range a {
 		seen[id] = true
 	}
 	for _, id := range b {
 		seen[id] = true
+	}
+	for _, id := range walkable {
+		seen[id] = false
 	}
 	merged := make([]uint16, 0, len(seen))
 	for id := range seen {
