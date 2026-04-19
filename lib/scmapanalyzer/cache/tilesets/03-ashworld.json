@@ -2,7 +2,6 @@
   "tileset_id": 3,
   "tileset_name": "ashworld",
   "tileset_key": "03-ashworld",
-  "source_map": "Neo_Ground_Zero.jpg",
   "wall_tile_ids": [
     224,
     225,

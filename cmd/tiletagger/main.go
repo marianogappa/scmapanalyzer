@@ -8,63 +8,125 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/marianogappa/scmapanalyzer/internal/tiletagger"
 	"github.com/marianogappa/scmapanalyzer/internal/tiletags"
 )
 
-type output struct {
+type runOutput struct {
+	MapImagePath      string                `json:"map_image_path"`
+	OverlayImagePath  string                `json:"overlay_image_path"`
 	MatchedReplayPath string                `json:"matched_replay_path"`
 	Tags              *tiletags.TileSetTags `json:"tags"`
 	RepositoryPath    string                `json:"repository_path"`
 }
 
+type output struct {
+	Count int         `json:"count"`
+	Runs  []runOutput `json:"runs"`
+}
+
 func main() {
 	var (
-		mapImagePath     string
-		overlayImagePath string
-		replaysDir       string
-		tagsRepoDir      string
-		outJSONPath      string
+		mapImagesDir string
+		overlaysDir  string
+		replaysDir   string
+		outputDir    string
+		onlyRunMap   string
 	)
-	flag.StringVar(&mapImagePath, "map-image", "", "Path to the base map image")
-	flag.StringVar(&overlayImagePath, "overlay-image", "", "Path to map image with red/purple wall/ramp overlays")
+	flag.StringVar(&mapImagesDir, "map-images-dir", "map-images", "Directory with base map images")
+	flag.StringVar(&overlaysDir, "overlays-dir", "sample-map-masks", "Directory with red/purple overlay images")
 	flag.StringVar(&replaysDir, "replays-dir", "replays", "Directory to search for matching replay")
-	flag.StringVar(&tagsRepoDir, "tags-repo", filepath.Join("output", "tagged-tilesets"), "Directory where per-tileset tagging JSON files are stored")
-	flag.StringVar(&outJSONPath, "out-json", filepath.Join("output", "tiletagger-result.json"), "Output JSON path for this run")
+	flag.StringVar(&outputDir, "output-dir", "output", "Output root directory (writes tagged-tilesets and tiletagger-result.json)")
+	flag.StringVar(&onlyRunMap, "only-run-map", "", "Optional map name/filename stem to run a single map")
 	flag.Parse()
 
-	res, err := tiletagger.Run(tiletagger.Config{
-		MapImagePath:     mapImagePath,
-		OverlayImagePath: overlayImagePath,
-		ReplaysDir:       replaysDir,
-		PerCellThreshold: 0.45,
-		PerTileThreshold: 0.55,
-		MinCellsPerTile:  2,
-	})
+	tagsRepoDir := filepath.Join(outputDir, "tagged-tilesets")
+	outJSONPath := filepath.Join(outputDir, "tiletagger-result.json")
+
+	mapImages, err := collectImageIndex(mapImagesDir)
 	if err != nil {
-		fatalf("run tiletagger: %v", err)
+		fatalf("collect map images: %v", err)
+	}
+	overlays, err := collectImageIndex(overlaysDir)
+	if err != nil {
+		fatalf("collect overlays: %v", err)
+	}
+	if len(mapImages) == 0 {
+		fatalf("no map images found in %s", mapImagesDir)
+	}
+	if len(overlays) == 0 {
+		fatalf("no overlay images found in %s", overlaysDir)
 	}
 
-	// If tags for this tileset already exist, augment instead of overwrite:
-	// keep all previously tagged IDs and add any newly detected IDs.
-	existing, err := tiletags.LoadByTileSetKey(tagsRepoDir, res.Tags.TileSetKey)
-	if err == nil && existing != nil {
-		res.Tags.WallTileIDs = mergeIDs(existing.WallTileIDs, res.Tags.WallTileIDs)
-		res.Tags.RampTileIDs = mergeIDs(existing.RampTileIDs, res.Tags.RampTileIDs)
+	keys := make([]string, 0)
+	selector := normalizeKey(onlyRunMap)
+	for k := range mapImages {
+		if _, ok := overlays[k]; !ok {
+			continue
+		}
+		if selector != "" && k != selector {
+			continue
+		}
+		keys = append(keys, k)
 	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		fatalf("load existing tags for merge: %v", err)
+	sort.Strings(keys)
+	if len(keys) == 0 {
+		if selector != "" {
+			fatalf("no map/overlay pair found for only-run-map=%q", onlyRunMap)
+		}
+		fatalf("no map/overlay pairs found between %s and %s", mapImagesDir, overlaysDir)
 	}
 
-	repoPath, err := tiletags.Save(tagsRepoDir, res.Tags)
-	if err != nil {
-		fatalf("save tags repo entry: %v", err)
+	runs := make([]runOutput, 0, len(keys))
+	for _, key := range keys {
+		mapImagePath := mapImages[key]
+		overlayImagePath := overlays[key]
+		res, runErr := tiletagger.Run(tiletagger.Config{
+			MapImagePath:     mapImagePath,
+			OverlayImagePath: overlayImagePath,
+			ReplaysDir:       replaysDir,
+			PerCellThreshold: 0.45,
+			PerTileThreshold: 0.55,
+			MinCellsPerTile:  2,
+		})
+		if runErr != nil {
+			fmt.Fprintf(os.Stderr, "skip %s: %v\n", key, runErr)
+			continue
+		}
+
+		// Incremental tags in output/tagged-tilesets:
+		// merge previous IDs with newly detected IDs for this tileset key.
+		existing, loadErr := tiletags.LoadByTileSetKey(tagsRepoDir, res.Tags.TileSetKey)
+		if loadErr == nil && existing != nil {
+			res.Tags.WallTileIDs = mergeIDs(existing.WallTileIDs, res.Tags.WallTileIDs)
+			res.Tags.RampTileIDs = mergeIDs(existing.RampTileIDs, res.Tags.RampTileIDs)
+		}
+		if loadErr != nil && !errors.Is(loadErr, os.ErrNotExist) {
+			fatalf("load existing tags for merge (%s): %v", res.Tags.TileSetKey, loadErr)
+		}
+
+		repoPath, saveErr := tiletags.Save(tagsRepoDir, res.Tags)
+		if saveErr != nil {
+			fatalf("save tags repo entry (%s): %v", res.Tags.TileSetKey, saveErr)
+		}
+		fmt.Printf("Wrote: %s\n", repoPath)
+		runs = append(runs, runOutput{
+			MapImagePath:      mapImagePath,
+			OverlayImagePath:  overlayImagePath,
+			MatchedReplayPath: res.MatchedReplayPath,
+			Tags:              res.Tags,
+			RepositoryPath:    repoPath,
+		})
 	}
+	if len(runs) == 0 {
+		fatalf("tiletagger produced no successful runs")
+	}
+
 	out := output{
-		MatchedReplayPath: res.MatchedReplayPath,
-		Tags:              res.Tags,
-		RepositoryPath:    repoPath,
+		Count: len(runs),
+		Runs:  runs,
 	}
 	if err := os.MkdirAll(filepath.Dir(outJSONPath), 0o755); err != nil {
 		fatalf("mkdir output dir: %v", err)
@@ -72,7 +134,6 @@ func main() {
 	if err := writeJSON(outJSONPath, out); err != nil {
 		fatalf("write output json: %v", err)
 	}
-	fmt.Printf("Wrote: %s\n", repoPath)
 	fmt.Printf("Wrote: %s\n", outJSONPath)
 }
 
@@ -99,6 +160,55 @@ func mergeIDs(a []uint16, b []uint16) []uint16 {
 	}
 	sort.Slice(merged, func(i int, j int) bool { return merged[i] < merged[j] })
 	return merged
+}
+
+func collectImageIndex(dir string) (map[string]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		ext := strings.ToLower(filepath.Ext(name))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+			continue
+		}
+		stem := normalizeKey(strings.TrimSuffix(name, filepath.Ext(name)))
+		if stem == "" {
+			continue
+		}
+		if _, exists := out[stem]; exists {
+			continue
+		}
+		out[stem] = filepath.Join(dir, name)
+	}
+	return out, nil
+}
+
+func normalizeKey(v string) string {
+	v = strings.TrimSpace(strings.ToLower(v))
+	if v == "" {
+		return ""
+	}
+	b := strings.Builder{}
+	lastDash := false
+	for _, r := range v {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	return out
 }
 
 func fatalf(format string, args ...any) {

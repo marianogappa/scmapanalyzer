@@ -90,7 +90,6 @@ func Run(cfg Config) (*Result, error) {
 		TileSetID:   meta.Tileset,
 		TileSetName: meta.TilesetName,
 		TileSetKey:  meta.TilesetKey,
-		SourceMap:   filepath.Base(cfg.MapImagePath),
 		WallTileIDs: wallIDs,
 		RampTileIDs: rampIDs,
 	}

@@ -12,14 +12,47 @@ import (
 )
 
 const (
-	// startOwnerNone: tile not assigned to any start (nearest detected base is an expansion).
-	startOwnerNone      = -1
+	// startOwnerNone marks tiles that are nearest to an expansion base, not a start base.
+	// We use -1 because owner indices are otherwise 0..N-1.
+	startOwnerNone = -1
+
+	// startClearanceTiles keeps masks at least this many tiles away from
+	// wall/ramp barriers when region growing. Increase to make regions tighter.
 	startClearanceTiles = 1
-	startEdgeClearance  = 0
-	attempt2CapMul      = 0.88
-	shapeAspectRatio    = 1.7
-	shapeFixedMaxDist   = 1.08
-	shapeMinAxis        = 5.0
+
+	// startEdgeClearance reserves a margin from map edges.
+	// Keep at 0 unless edge bleeding appears in generated polygons.
+	startEdgeClearance = 0
+
+	// attempt2CapMul caps fallback expansion area as a fraction of the smallest
+	// detected start area. Lower values make fallback expansions more conservative.
+	attempt2CapMul = 0.88
+
+	// shapeAspectRatio is the major/minor axis ratio used by fixed oblong models.
+	// Higher values make bases longer and narrower.
+	shapeAspectRatio = 1.7
+
+	// shapeFixedMaxDist is the max normalized ellipse distance allowed during
+	// growth. 1.0 hugs the inferred shape; >1.0 allows slight overshoot.
+	shapeFixedMaxDist = 1.08
+
+	// shapeMinAxis enforces a minimum semi-axis length for tiny inferred areas.
+	shapeMinAxis = 5.0
+
+	// seedSearchRadius is how far from the center we scan for a valid seed tile
+	// when the rounded center is blocked by clearance/ownership constraints.
+	seedSearchRadius = 10
+
+	// passableSeedSearchRadius is similar to seedSearchRadius but for pathing BFS
+	// (natural detection), where we only need a passable tile near a center.
+	passableSeedSearchRadius = 12
+
+	// orientationRadius tiles around a base center are sampled to infer the local
+	// open-area orientation used to rotate oblong shapes.
+	orientationRadius = 16
+
+	// minOrientationSamples avoids unstable covariance orientation on sparse data.
+	minOrientationSamples = 10
 )
 
 type point struct {
@@ -203,7 +236,6 @@ func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutpu
 
 	return &AnalyzeOutput{
 		Result: &Result{
-			ReplayPath: meta.ReplayPath,
 			MapName:    meta.MapName,
 			TileSetKey: meta.TilesetKey,
 			Starts:     startPolys,
@@ -462,7 +494,7 @@ func growSingleRegionWithClearance(width int, height int, owner int, owners []in
 }
 
 func findSeed(width int, height int, owners []int, distClear []int, distEdge []int, owner int, x int, y int, clearance int, edgeClearance int, forbidden []bool) (int, int, bool) {
-	for r := 0; r <= 10; r++ {
+	for r := 0; r <= seedSearchRadius; r++ {
 		for yy := y - r; yy <= y+r; yy++ {
 			for xx := x - r; xx <= x+r; xx++ {
 				if xx < 0 || yy < 0 || xx >= width || yy >= height {
@@ -488,7 +520,7 @@ func findSeed(width int, height int, owners []int, distClear []int, distEdge []i
 func inferFixedShapes(width int, height int, centers []point, blocked []bool, maxArea int) []shapeModel {
 	shapes := make([]shapeModel, len(centers))
 	for i, c := range centers {
-		angle := localOrientation(width, height, c, blocked, 16)
+		angle := localOrientation(width, height, c, blocked, orientationRadius)
 		axisB := math.Sqrt(float64(maxArea) / (math.Pi * shapeAspectRatio))
 		axisA := axisB * shapeAspectRatio
 		if axisA < shapeMinAxis {
@@ -532,7 +564,7 @@ func localOrientation(width int, height int, c point, blocked []bool, radius int
 			varXY += dx * dy
 		}
 	}
-	if n < 10 {
+	if n < minOrientationSamples {
 		return 0
 	}
 	varXX /= n
@@ -654,7 +686,7 @@ func growExpasCompetitiveWithGate(width int, height int, centers []point, blocke
 }
 
 func findUnblocked(width int, height int, owner []int, x int, y int) (int, int, bool) {
-	for r := 0; r <= 10; r++ {
+	for r := 0; r <= seedSearchRadius; r++ {
 		for yy := y - r; yy <= y+r; yy++ {
 			for xx := x - r; xx <= x+r; xx++ {
 				if xx < 0 || yy < 0 || xx >= width || yy >= height {
@@ -754,7 +786,7 @@ func bfsFrom(width int, height int, blocked []bool, sx int, sy int) ([]int, []in
 func nearestPassableSeed(width int, height int, blocked []bool, x int, y int) (int, int, bool) {
 	x = clampInt(x, 0, width-1)
 	y = clampInt(y, 0, height-1)
-	for r := 0; r <= 12; r++ {
+	for r := 0; r <= passableSeedSearchRadius; r++ {
 		for yy := y - r; yy <= y+r; yy++ {
 			for xx := x - r; xx <= x+r; xx++ {
 				if xx < 0 || yy < 0 || xx >= width || yy >= height {

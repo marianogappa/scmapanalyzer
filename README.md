@@ -26,7 +26,6 @@ The API returns [`replaymap.Result`](replaymap/types.go): JSON-serializable fiel
 
 ```go
 type Result struct {
-    ReplayPath string         `json:"replay_path"`
     MapName    string         `json:"map_name"`
     TileSetKey string         `json:"tileset_key"`
     Starts     []BasePolygon  `json:"starting_locations"`
@@ -80,16 +79,32 @@ Import path: `github.com/marianogappa/scmapanalyzer/lib/scmapanalyzer`.
 
 ## Developer tools
 
-- **`cmd/replaymapanalyzer`** — CLI: read one replay, write JSON and optional PNG overlay (needs `-map-image` from [`map-images/`](map-images/) for the overlay).
-- **`cmd/tiletagger`** — build or extend wall/ramp tile ID lists from a minimap plus [`sample-map-masks/`](sample-map-masks/) (red wall / purple ramp) and a replay search path; writes per-tileset JSON like those under `lib/scmapanalyzer/cache/tilesets/`.
+The below tools are used to improve the map analyzer's accuracy. They're meant for contributors, not library consumers.
+
+### Introduction
+
+The map analyzer currently doesn't know tile-tagging information (e.g. which tiles are walls/ramps). The "tile-tagger" tool solves this problem:
+
+- It takes a map image overlayed with red over walls and purple over ramps (examples in `sample-map-masks/`)
+- Using a `replays/` folder, it looks for replays with the same map name (which contain tileset tile ids for the map)
+- With these, it maps tile ids (on the map's tileset) to wall/ramp information. The output is in `output/tagged-tilesets/`.
+
+Once the tile-tags are available, the map analyzer can be used to analyze replays:
+- It takes a `replays/` folder and uses the `output/tagged-tilesets/` folder to look up tile-tagging information for each replay's map's tileset.
+- This is enough to produce a JSON file with the map geometry for each replay's map. However, to see the computed geometry, you need the map image, which it will look for in `map-images/` (e.g. `map-images/dominator_se.jpg`).
+
+### Just use the Makefile targets
+
+- Use the `Makefile` targets as the entrypoint (`tile-tagger`, `replay-map-analyzer`, `publish-tilesets`, `publish-maps`). They have comments on how they work.
+- `output/tagged-tilesets` is the "nightly" tag repo used by the CLI tools.
+- `lib/scmapanalyzer/cache/{tilesets,maps}` is the "stable" cache used by library consumers.
+- `tile-tagger` and `replay-map-analyzer` support `ONLY_RUN_MAP=...` for focused runs.
 
 ```bash
-go run ./cmd/replaymapanalyzer \
-  -replay replays/30-lIlIIIIIIllllll/MM-268BF7A8-FC4B-11F0-A3DD-FA167B5461B6.rep \
-  -tags-repo output/tagged-tilesets \
-  -map-image map-images/dominator_se.jpg \
-  -out-json output/replaymap-analyzer.json \
-  -out-image output/replaymap-analyzer-overlay.png
+make tile-tagger
+make replay-map-analyzer
+make publish-tilesets
+make publish-maps
 ```
 
 License: [MIT](LICENSE).

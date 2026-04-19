@@ -17,7 +17,6 @@ type BasePolygon struct {
 }
 
 type Result struct {
-	ReplayPath string        `json:"replay_path"`
 	MapName    string        `json:"map_name"`
 	TileSetKey string        `json:"tileset_key"`
 	Starts     []BasePolygon `json:"starting_locations"`

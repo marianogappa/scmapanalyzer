@@ -2,7 +2,6 @@
   "tileset_id": 5,
   "tileset_name": "desert",
   "tileset_key": "05-desert",
-  "source_map": "La_Mancha.jpg",
   "wall_tile_ids": [
     96,
     97,

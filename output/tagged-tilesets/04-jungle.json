@@ -2,7 +2,6 @@
   "tileset_id": 4,
   "tileset_name": "jungle",
   "tileset_key": "04-jungle",
-  "source_map": "Attitude.jpg",
   "wall_tile_ids": [
     96,
     97,

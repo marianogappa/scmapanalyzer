@@ -2,7 +2,6 @@
   "tileset_id": 1,
   "tileset_name": "space platform",
   "tileset_key": "01-space-platform",
-  "source_map": "KnockOut.jpg",
   "wall_tile_ids": [
     32,
     48,

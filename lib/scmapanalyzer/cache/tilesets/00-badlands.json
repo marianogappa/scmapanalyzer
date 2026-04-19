@@ -2,7 +2,6 @@
   "tileset_id": 0,
   "tileset_name": "badlands",
   "tileset_key": "00-badlands",
-  "source_map": "Metropolis_bw.jpg",
   "wall_tile_ids": [
     96,
     97,

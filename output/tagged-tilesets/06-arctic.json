@@ -2,7 +2,6 @@
   "tileset_id": 6,
   "tileset_name": "arctic",
   "tileset_key": "06-arctic",
-  "source_map": "Taucross.jpg",
   "wall_tile_ids": [
     192,
     193,

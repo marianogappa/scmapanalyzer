@@ -1,5 +1,6 @@
 scripts/
 replays/
 bin/
-Makefile
 .DS_Store
+output/tiletagger-result.json
+output/replaymap-analyzer/*.png

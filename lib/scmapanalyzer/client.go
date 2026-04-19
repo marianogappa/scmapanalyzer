@@ -102,7 +102,7 @@ func (c *Client) Analyze(replayPath string, opts ...Option) (*replaymap.Result, 
 
 	if o.mapNameHint != "" {
 		if r := c.lookupByMapNameHint(o.mapNameHint); r != nil {
-			return cloneResult(r, replayPath)
+			return cloneResult(r)
 		}
 	}
 
@@ -115,14 +115,14 @@ func (c *Client) Analyze(replayPath string, opts ...Option) (*replaymap.Result, 
 	c.dynMu.RLock()
 	if dr, ok := c.dynamic[key]; ok {
 		c.dynMu.RUnlock()
-		return cloneResult(dr, replayPath)
+		return cloneResult(dr)
 	}
 	c.dynMu.RUnlock()
 
 	c.mu.RLock()
 	if er, ok := c.byExactKey[key]; ok {
 		c.mu.RUnlock()
-		return cloneResult(er, replayPath)
+		return cloneResult(er)
 	}
 	c.mu.RUnlock()
 
@@ -135,7 +135,7 @@ func (c *Client) Analyze(replayPath string, opts ...Option) (*replaymap.Result, 
 		return nil, err
 	}
 	storeKey := NormalizeMapKey(out.Result.MapName)
-	stored, err := cloneResult(out.Result, out.Result.ReplayPath)
+	stored, err := cloneResult(out.Result)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (c *Client) Analyze(replayPath string, opts ...Option) (*replaymap.Result, 
 	c.dynamic[storeKey] = stored
 	c.dynMu.Unlock()
 
-	return cloneResult(out.Result, replayPath)
+	return cloneResult(out.Result)
 }
 
 func (c *Client) lookupByMapNameHint(hint string) *replaymap.Result {
@@ -198,7 +198,7 @@ func (c *Client) fuzzyPickEmbeddedAndDynamic(name string) *replaymap.Result {
 	return nil
 }
 
-func cloneResult(r *replaymap.Result, replayPath string) (*replaymap.Result, error) {
+func cloneResult(r *replaymap.Result) (*replaymap.Result, error) {
 	b, err := json.Marshal(r)
 	if err != nil {
 		return nil, err
@@ -207,6 +207,5 @@ func cloneResult(r *replaymap.Result, replayPath string) (*replaymap.Result, err
 	if err := json.Unmarshal(b, &out); err != nil {
 		return nil, err
 	}
-	out.ReplayPath = replayPath
 	return &out, nil
 }
