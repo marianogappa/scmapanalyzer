@@ -1,22 +1,25 @@
 package replay
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/icza/screp/rep"
 	"github.com/icza/screp/repparser"
 	"github.com/marianogappa/scmapanalyzer/internal/model"
 )
 
-func ParseMapMetadata(path string) (*model.MapMetadata, error) {
-	rep, err := repparser.ParseFile(path)
-	if err != nil {
-		return nil, err
-	}
+// MapMetadataFromReplay builds [model.MapMetadata] from an already-parsed replay.
+// replayPath is used only in error messages; pass empty when not applicable.
+func MapMetadataFromReplay(rep *rep.Replay, replayPath string) (*model.MapMetadata, error) {
 	if rep == nil || rep.Header == nil {
-		return nil, fmt.Errorf("missing replay header for %q", path)
+		return nil, errors.New("missing replay header")
 	}
 	if rep.MapData == nil {
-		return nil, fmt.Errorf("replay has no map data for %q", path)
+		if replayPath != "" {
+			return nil, fmt.Errorf("replay has no map data for %q", replayPath)
+		}
+		return nil, errors.New("replay has no map data")
 	}
 
 	tileset := 0
@@ -27,7 +30,7 @@ func ParseMapMetadata(path string) (*model.MapMetadata, error) {
 	tileSetMeta := TileSetMetadata(tileset, tileSetMissing)
 
 	meta := &model.MapMetadata{
-		ReplayPath:     path,
+		ReplayPath:     replayPath,
 		MapName:        rep.Header.Map,
 		MapDataName:    rep.MapData.Name,
 		WidthTiles:     int(rep.Header.MapWidth),
@@ -40,10 +43,12 @@ func ParseMapMetadata(path string) (*model.MapMetadata, error) {
 	}
 	expected := meta.WidthTiles * meta.HeightTiles
 	if got := len(meta.Tiles); got > expected {
-		// Some replays carry a few extra tile slots past the declared map size; trim to match header.
 		meta.Tiles = meta.Tiles[:expected]
 	} else if got < expected {
-		return nil, fmt.Errorf("replay tile grid mismatch for %q: got %d tiles, want %d (%dx%d)", path, got, expected, meta.WidthTiles, meta.HeightTiles)
+		if replayPath != "" {
+			return nil, fmt.Errorf("replay tile grid mismatch for %q: got %d tiles, want %d (%dx%d)", replayPath, got, expected, meta.WidthTiles, meta.HeightTiles)
+		}
+		return nil, fmt.Errorf("replay tile grid mismatch: got %d tiles, want %d (%dx%d)", got, expected, meta.WidthTiles, meta.HeightTiles)
 	}
 	for _, m := range rep.MapData.MineralFields {
 		meta.MineralFields = append(meta.MineralFields, model.MapResource{
@@ -64,5 +69,18 @@ func ParseMapMetadata(path string) (*model.MapMetadata, error) {
 			SlotID: s.SlotID,
 		})
 	}
+	return meta, nil
+}
+
+func ParseMapMetadata(path string) (*model.MapMetadata, error) {
+	rep, err := repparser.ParseFile(path)
+	if err != nil {
+		return nil, err
+	}
+	meta, err := MapMetadataFromReplay(rep, path)
+	if err != nil {
+		return nil, err
+	}
+	meta.ReplayPath = path
 	return meta, nil
 }

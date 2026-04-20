@@ -1,4 +1,8 @@
 // Package scmapanalyzer provides a small client over [replaymap.Analyze] with
 // embedded ladder-map JSON. Use [NewClient] and [Client.Analyze]; optional
 // [WithMapName] enables cache hits without reading the replay file.
+//
+// Map and unit image helpers return PNG bytes in memory: [MapImagePNGFromReplayFile],
+// [MapImagePNGFromScrepReplay], and [UnitOrBuildingImagePNG] (HD sprites are hd_units/u<ID>.qoi
+// with display names in [hdSpriteUnitNames]).
 package scmapanalyzer

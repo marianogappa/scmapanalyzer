@@ -81,12 +81,7 @@ func main() {
 		}
 		fmt.Printf("Wrote: %s\n", outJSONPath)
 
-		md, mdErr := mapgfx.MapDataFromMetadata(meta)
-		if mdErr != nil {
-			fmt.Fprintf(os.Stderr, "skip %s overlay: map render data: %v\n", key, mdErr)
-			continue
-		}
-		pngBytes, rendErr := mapgfx.RenderMapPNG(md, mapgfx.RenderOptions{OverlayResources: true})
+		pngBytes, rendErr := mapgfx.RenderMapPNGFromMetadata(meta, mapgfx.RenderOptions{OverlayResources: true})
 		if rendErr != nil {
 			fmt.Fprintf(os.Stderr, "skip %s overlay: render map: %v\n", key, rendErr)
 			continue

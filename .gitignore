@@ -1,4 +1,5 @@
 replays/
 bin/
+.trash/
 .DS_Store
 output/replaymap-analyzer/*.png
