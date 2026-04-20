@@ -1,0 +1,12 @@
+{
+  "sprites": {
+    "geyser": "neutral__geyser.grp",
+    "min01": "neutral__min01.grp",
+    "min02": "neutral__min02.grp",
+    "min03": "neutral__min03.grp",
+    "neutral/geyser": "neutral__geyser.grp",
+    "neutral/min01": "neutral__min01.grp",
+    "neutral/min02": "neutral__min02.grp",
+    "neutral/min03": "neutral__min03.grp"
+  }
+}

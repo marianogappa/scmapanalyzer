@@ -27,17 +27,17 @@ func ReplayMap(base image.Image, debug *replaymap.DebugData) image.Image {
 	if debug == nil {
 		return canvas
 	}
-	stepX := float64(bounds.Dx()) / float64(debug.WidthTiles)
-	stepY := float64(bounds.Dy()) / float64(debug.HeightTiles)
+	stepX := float64(bounds.Dx()) / float64(debug.WidthMinitiles)
+	stepY := float64(bounds.Dy()) / float64(debug.HeightMinitiles)
 
 	startFill := color.RGBA{R: 0, G: 255, B: 255, A: 190}
 	startStroke := color.RGBA{R: 255, G: 255, B: 255, A: 255}
 	for _, mask := range debug.StartMasks {
-		drawMask(canvas, mask, debug.WidthTiles, debug.HeightTiles, stepX, stepY, startFill, startStroke)
+		drawMask(canvas, mask, debug.WidthMinitiles, debug.HeightMinitiles, stepX, stepY, startFill, startStroke)
 	}
 	for i, mask := range debug.ExpaMasks {
 		p := expaPalette[i%len(expaPalette)]
-		drawMask(canvas, mask, debug.WidthTiles, debug.HeightTiles, stepX, stepY, p.fill, p.stroke)
+		drawMask(canvas, mask, debug.WidthMinitiles, debug.HeightMinitiles, stepX, stepY, p.fill, p.stroke)
 	}
 	for i, l := range debug.NaturalLinks {
 		p := expaPalette[i%len(expaPalette)].stroke
@@ -50,8 +50,8 @@ func ReplayMap(base image.Image, debug *replaymap.DebugData) image.Image {
 	wallStroke := color.RGBA{R: 255, G: 255, B: 255, A: 255}
 	rampFill := color.RGBA{R: 160, G: 0, B: 255, A: 255}
 	rampStroke := color.RGBA{R: 255, G: 255, B: 255, A: 255}
-	drawCategoryTiles(canvas, debug.WallMask, debug.WidthTiles, debug.HeightTiles, stepX, stepY, wallFill, wallStroke)
-	drawCategoryTiles(canvas, debug.RampMask, debug.WidthTiles, debug.HeightTiles, stepX, stepY, rampFill, rampStroke)
+	drawCategoryTiles(canvas, debug.WallMask, debug.WidthMinitiles, debug.HeightMinitiles, stepX, stepY, wallFill, wallStroke)
+	drawCategoryTiles(canvas, debug.RampMask, debug.WidthMinitiles, debug.HeightMinitiles, stepX, stepY, rampFill, rampStroke)
 	return canvas
 }
 

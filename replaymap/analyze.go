@@ -7,8 +7,8 @@ import (
 	"sort"
 
 	"github.com/marianogappa/scmapanalyzer/internal/basedetect"
+	"github.com/marianogappa/scmapanalyzer/internal/mapgfx"
 	"github.com/marianogappa/scmapanalyzer/internal/model"
-	"github.com/marianogappa/scmapanalyzer/internal/tiletags"
 )
 
 const (
@@ -38,51 +38,45 @@ type point struct {
 	Y float64
 }
 
-func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutput, error) {
-	if meta == nil || tags == nil {
-		return nil, errors.New("metadata and tile tags are required")
+func Analyze(meta *model.MapMetadata) (*AnalyzeOutput, error) {
+	if meta == nil {
+		return nil, errors.New("metadata is required")
 	}
 	if len(meta.Tiles) != meta.WidthTiles*meta.HeightTiles {
 		return nil, errors.New("tile grid mismatch")
 	}
+
+	folder, err := mapgfx.TilesetAssetFolderFromReplay(meta.TilesetKey)
+	if err != nil {
+		return nil, err
+	}
+	grid, err := mapgfx.BuildMiniTileGrid(folder, meta.WidthTiles, meta.HeightTiles, meta.Tiles)
+	if err != nil {
+		return nil, err
+	}
+	w := grid.Width
+	h := grid.Height
 
 	bases := basedetect.DetectBases(meta.WidthTiles, meta.HeightTiles, meta.MineralFields, meta.Geysers, meta.StartLocations)
 	if len(bases) == 0 {
 		return nil, errors.New("no bases detected")
 	}
 
-	wallSet := asSet(tags.WallTileIDs)
-	rampSet := asSet(tags.RampTileIDs)
-	wallRampBarrier, edgeBarrier := buildBarriers(meta.WidthTiles, meta.HeightTiles, meta.Tiles, wallSet, rampSet)
-	distWR := distanceToBarrier(meta.WidthTiles, meta.HeightTiles, wallRampBarrier)
-	distEdge := distanceToBarrier(meta.WidthTiles, meta.HeightTiles, edgeBarrier)
-
-	// Starts: clearance uses wall-only distance so ramp-adjacent tiles inside a wall-bounded
-	// natural are not rejected (ramps stay non-walkable via rampForbidden).
-	wallOnlyBar := make([]bool, len(meta.Tiles))
-	for i, t := range meta.Tiles {
-		if wallSet[t] {
-			wallOnlyBar[i] = true
-		}
-	}
-	distWallClear := distanceToBarrier(meta.WidthTiles, meta.HeightTiles, wallOnlyBar)
+	wallRampBarrier, edgeBarrier, wallOnlyBar, rampForbidden := barriersFromMiniTileGrid(w, h, grid.Data)
+	distWR := distanceToBarrier(w, h, wallRampBarrier)
+	distEdge := distanceToBarrier(w, h, edgeBarrier)
+	distWallClear := distanceToBarrier(w, h, wallOnlyBar)
 
 	startBaseIdx, _, startCenters, expaCenters := splitBases(bases)
 	if len(startCenters) == 0 || len(expaCenters) == 0 {
 		return nil, errors.New("expected both starts and expansions")
 	}
 
-	startOwners := assignNearestStartAmongAllBases(meta.WidthTiles, meta.HeightTiles, bases, startBaseIdx)
-	expaOwners := assignNearest(meta.WidthTiles, meta.HeightTiles, expaCenters)
-	rampForbidden := make([]bool, len(meta.Tiles))
-	for i, t := range meta.Tiles {
-		if rampSet[t] {
-			rampForbidden[i] = true
-		}
-	}
+	startOwners := assignNearestStartAmongAllBases(w, h, bases, startBaseIdx)
+	expaOwners := assignNearest(w, h, expaCenters)
 	maskOut, maskErr := buildRegionMasks(buildRegionMasksInput{
-		Width:           meta.WidthTiles,
-		Height:          meta.HeightTiles,
+		Width:           w,
+		Height:          h,
 		DistWR:          distWR,
 		DistEdge:        distEdge,
 		DistWallOnly:    distWallClear,
@@ -100,40 +94,34 @@ func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutpu
 	startMasks := maskOut.StartMasks
 	expaMasks := maskOut.ExpaMasks
 
-	naturals := computeNaturals(
-		meta.WidthTiles,
-		meta.HeightTiles,
-		meta.Tiles,
-		wallSet,
-		startCenters,
-		expaCenters,
-	)
+	naturalBlocked := naturalBlockedMask(w, h, grid.Data)
+	naturals := computeNaturals(w, h, naturalBlocked, startCenters, expaCenters)
 
 	startPolys := make([]BasePolygon, len(startCenters))
 	for i := range startCenters {
-		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(startCenters[i].X*32)), int(math.Round(startCenters[i].Y*32)))
+		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(startCenters[i].X*8)), int(math.Round(startCenters[i].Y*8)))
 		startMask := startMasks[i]
 		startPolys[i] = BasePolygon{
 			Name:            "start " + itoa(clock),
 			Kind:            "start",
 			Clock:           clock,
 			CenterTile:      TilePoint{X: int(math.Round(startCenters[i].X)), Y: int(math.Round(startCenters[i].Y))},
-			PolygonVertices: maskToPolygon(meta.WidthTiles, meta.HeightTiles, startMask),
-			MineralOnly:     mineralOnlyMask(meta.WidthTiles, meta.HeightTiles, startMask, meta.Geysers),
+			PolygonVertices: maskToPolygon(w, h, startMask),
+			MineralOnly:     mineralOnlyMask(w, h, startMask, meta.Geysers),
 		}
 	}
 
 	expaPolys := make([]BasePolygon, len(expaCenters))
 	for i := range expaCenters {
-		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(expaCenters[i].X*32)), int(math.Round(expaCenters[i].Y*32)))
+		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(expaCenters[i].X*8)), int(math.Round(expaCenters[i].Y*8)))
 		expaMask := expaMasks[i]
 		expaPolys[i] = BasePolygon{
 			Name:            "expa " + itoa(clock),
 			Kind:            "expa",
 			Clock:           clock,
 			CenterTile:      TilePoint{X: int(math.Round(expaCenters[i].X)), Y: int(math.Round(expaCenters[i].Y))},
-			PolygonVertices: maskToPolygon(meta.WidthTiles, meta.HeightTiles, expaMask),
-			MineralOnly:     mineralOnlyMask(meta.WidthTiles, meta.HeightTiles, expaMask, meta.Geysers),
+			PolygonVertices: maskToPolygon(w, h, expaMask),
+			MineralOnly:     mineralOnlyMask(w, h, expaMask, meta.Geysers),
 		}
 	}
 
@@ -143,11 +131,14 @@ func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutpu
 		}
 	}
 
-	wallMask := make([]bool, len(meta.Tiles))
-	rampMask := make([]bool, len(meta.Tiles))
-	for i, t := range meta.Tiles {
-		wallMask[i] = wallSet[t]
-		rampMask[i] = rampSet[t]
+	wallMask := make([]bool, len(grid.Data))
+	rampMask := make([]bool, len(grid.Data))
+	for i, feat := range grid.Data {
+		f := feat & 0x0F
+		walk := (f & mapgfx.FeatureWalkable) != 0
+		ramp := (f & mapgfx.FeatureRamp) != 0
+		wallMask[i] = !walk && !ramp
+		rampMask[i] = ramp
 	}
 
 	return &AnalyzeOutput{
@@ -158,13 +149,13 @@ func Analyze(meta *model.MapMetadata, tags *tiletags.TileSetTags) (*AnalyzeOutpu
 			Expas:      expaPolys,
 		},
 		Debug: &DebugData{
-			WidthTiles:   meta.WidthTiles,
-			HeightTiles:  meta.HeightTiles,
-			StartMasks:   startMasks,
-			ExpaMasks:    expaMasks,
-			NaturalLinks: naturals,
-			WallMask:     wallMask,
-			RampMask:     rampMask,
+			WidthMinitiles:  w,
+			HeightMinitiles: h,
+			StartMasks:      startMasks,
+			ExpaMasks:       expaMasks,
+			NaturalLinks:    naturals,
+			WallMask:        wallMask,
+			RampMask:        rampMask,
 		},
 		Bases: bases,
 	}, nil
@@ -176,7 +167,7 @@ func splitBases(bases []model.Base) ([]int, []int, []point, []point) {
 	startCenters := []point{}
 	expaCenters := []point{}
 	for i, b := range bases {
-		c := point{X: b.CenterX / 32.0, Y: b.CenterY / 32.0}
+		c := point{X: b.CenterX / 8.0, Y: b.CenterY / 8.0}
 		if b.IsStarting {
 			startIdx = append(startIdx, i)
 			startCenters = append(startCenters, c)
@@ -188,10 +179,49 @@ func splitBases(bases []model.Base) ([]int, []int, []point, []point) {
 	return startIdx, expaIdx, startCenters, expaCenters
 }
 
-func asSet(ids []uint16) map[uint16]bool {
-	out := map[uint16]bool{}
-	for _, id := range ids {
-		out[id] = true
+func barriersFromMiniTileGrid(width, height int, data []uint8) (wallRamp, edge, wallOnly, rampForbidden []bool) {
+	n := width * height
+	wallRamp = make([]bool, n)
+	edge = make([]bool, n)
+	wallOnly = make([]bool, n)
+	rampForbidden = make([]bool, n)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			idx := y*width + x
+			if x == 0 || y == 0 || x == width-1 || y == height-1 {
+				edge[idx] = true
+			}
+			f := data[idx] & 0x0F
+			walk := (f & mapgfx.FeatureWalkable) != 0
+			ramp := (f & mapgfx.FeatureRamp) != 0
+			if !walk || ramp {
+				wallRamp[idx] = true
+			}
+			if !walk && !ramp {
+				wallOnly[idx] = true
+			}
+			if ramp {
+				rampForbidden[idx] = true
+			}
+		}
+	}
+	return wallRamp, edge, wallOnly, rampForbidden
+}
+
+func naturalBlockedMask(width, height int, data []uint8) []bool {
+	out := make([]bool, width*height)
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			idx := y*width + x
+			if x == 0 || y == 0 || x == width-1 || y == height-1 {
+				out[idx] = true
+				continue
+			}
+			f := data[idx] & 0x0F
+			walk := (f & mapgfx.FeatureWalkable) != 0
+			ramp := (f & mapgfx.FeatureRamp) != 0
+			out[idx] = !walk && !ramp
+		}
 	}
 	return out
 }
@@ -206,23 +236,6 @@ func combineMasks(size int, masks [][]bool) []bool {
 		}
 	}
 	return out
-}
-
-func buildBarriers(width int, height int, tiles []uint16, wallSet map[uint16]bool, rampSet map[uint16]bool) ([]bool, []bool) {
-	wr := make([]bool, width*height)
-	edge := make([]bool, width*height)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			idx := y*width + x
-			if x == 0 || y == 0 || x == width-1 || y == height-1 {
-				edge[idx] = true
-			}
-			if wallSet[tiles[idx]] || rampSet[tiles[idx]] {
-				wr[idx] = true
-			}
-		}
-	}
-	return wr, edge
 }
 
 func distanceToBarrier(width int, height int, barrier []bool) []int {
@@ -287,7 +300,7 @@ func assignNearest(width int, height int, centers []point) []int {
 func assignNearestStartAmongAllBases(width int, height int, bases []model.Base, startOrderedBaseIdx []int) []int {
 	centers := make([]point, len(bases))
 	for i, b := range bases {
-		centers[i] = point{X: b.CenterX / 32.0, Y: b.CenterY / 32.0}
+		centers[i] = point{X: b.CenterX / 8.0, Y: b.CenterY / 8.0}
 	}
 	baseToStartOrd := make([]int, len(bases))
 	for i := range baseToStartOrd {
@@ -390,20 +403,7 @@ func findSeed(width int, height int, owners []int, distClear []int, distEdge []i
 	return 0, 0, false
 }
 
-func computeNaturals(width int, height int, tiles []uint16, wallSet map[uint16]bool, starts []point, expas []point) []NaturalLink {
-	blocked := make([]bool, width*height)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			idx := y*width + x
-			if x == 0 || y == 0 || x == width-1 || y == height-1 {
-				blocked[idx] = true
-				continue
-			}
-			if wallSet[tiles[idx]] {
-				blocked[idx] = true
-			}
-		}
-	}
+func computeNaturals(width int, height int, blocked []bool, starts []point, expas []point) []NaturalLink {
 	links := make([]NaturalLink, 0, len(starts))
 	for si, s := range starts {
 		sx, sy, ok := nearestPassableSeed(width, height, blocked, int(math.Round(s.X)), int(math.Round(s.Y)))
@@ -651,8 +651,8 @@ func itoa(v int) string {
 
 func mineralOnlyMask(width int, height int, mask []bool, geysers []model.MapResource) bool {
 	for _, g := range geysers {
-		gx := clampInt(int(math.Round(float64(g.X)/32.0)), 0, width-1)
-		gy := clampInt(int(math.Round(float64(g.Y)/32.0)), 0, height-1)
+		gx := clampInt(int(math.Round(float64(g.X)/8.0)), 0, width-1)
+		gy := clampInt(int(math.Round(float64(g.Y)/8.0)), 0, height-1)
 		for oy := -1; oy <= 1; oy++ {
 			for ox := -1; ox <= 1; ox++ {
 				tx := clampInt(gx+ox, 0, width-1)

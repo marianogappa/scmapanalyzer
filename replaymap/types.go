@@ -2,6 +2,7 @@ package replaymap
 
 import "github.com/marianogappa/scmapanalyzer/internal/model"
 
+// TilePoint uses minitile coordinates (8×8 px steps); map size is 4× map-tile width/height.
 type TilePoint struct {
 	X int `json:"x"`
 	Y int `json:"y"`
@@ -25,13 +26,13 @@ type Result struct {
 }
 
 type DebugData struct {
-	WidthTiles   int
-	HeightTiles  int
-	StartMasks   [][]bool
-	ExpaMasks    [][]bool
-	NaturalLinks []NaturalLink
-	WallMask     []bool
-	RampMask     []bool
+	WidthMinitiles  int
+	HeightMinitiles int
+	StartMasks      [][]bool
+	ExpaMasks       [][]bool
+	NaturalLinks    []NaturalLink
+	WallMask        []bool
+	RampMask        []bool
 }
 
 type AnalyzeOutput struct {

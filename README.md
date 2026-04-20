@@ -4,12 +4,14 @@
 - `scmapanalyzer` is a Go library that parses StarCraft: Brood War replays and provides:
     - All "base" approximate polygons.
     - Distinction between: "starting locations", "natural expansions" and "expansions".
+    - Which base is the natural expansion of a starting location.
+    - Whether bases are mineral-only or not.
     - Naming convention for bases, using o'clock notation.
 - It also ships with developer tools to debug and evolve the internal algorithms.
 
 ## Example debug overlay to visualize what it provides
 
-![Dominator SE debug overlay — starts, expansions, natural paths, wall (red) and ramp (purple) tile borders](docs/sample-dominator-overlay.png)
+![Big Game Hunters debug overlay — starts (cyan), expansions, natural paths, solid terrain (red), ramp minitiles (purple)](docs/big-game-hunters-overlay.png)
 
 ## Why is this useful?
 
@@ -47,6 +49,8 @@ type TilePoint struct {
 }
 ```
 
+`TilePoint` values are in **minitile** coordinates (8×8 px steps; four minitiles per map tile). `center_tile` and `polygon_vertices` use the same grid.
+
 ## Usage
 
 ```go
@@ -79,33 +83,17 @@ Import path: `github.com/marianogappa/scmapanalyzer/lib/scmapanalyzer`.
 
 ## Developer tools
 
-The below tools are used to improve the map analyzer's accuracy. They're meant for contributors, not library consumers.
+### Makefile targets
 
-### Introduction
-
-The map analyzer currently doesn't know tile-tagging information (e.g. which tiles are walls/ramps). The "tile-tagger" tool solves this problem:
-
-- It takes a map image overlayed with red over walls and purple over ramps (examples in `sample-map-masks/`)
-- Using a `replays/` folder, it looks for replays with the same map name (which contain tileset tile ids for the map)
-- With these, it maps tile ids (on the map's tileset) to wall/ramp information. The output is in `output/tagged-tilesets/`.
-
-Once the tile-tags are available, the map analyzer can be used to analyze replays:
-- It takes a `replays/` folder and uses the `output/tagged-tilesets/` folder to look up tile-tagging information for each replay's map's tileset.
-- This is enough to produce a JSON file with the map geometry for each replay's map. However, to see the computed geometry, you need the map image, which it will look for in `map-images/` (e.g. `map-images/dominator_se.jpg`).
-
-### Just use the Makefile targets
-
-- Use the `Makefile` targets as the entrypoint (`tile-tagger`, `replay-map-analyzer`, `publish-tilesets`, `publish-maps`). They have comments on how they work.
-- `output/tagged-tilesets` is the "nightly" tag repo used by the CLI tools.
-- `lib/scmapanalyzer/cache/{tilesets,maps}` is the "stable" cache used by library consumers.
-- `tile-tagger` and `replay-map-analyzer` support `ONLY_RUN_MAP=...` for focused runs.
+- `make replay-map-analyzer` — scans `replays/` (override with `REPLAYS_DIR=`), writes `output/replaymap-analyzer/*.json` and `*-overlay.png` (base map is rendered from replay tile data). Optional `ONLY_RUN_MAP=...`.
+- `make publish-maps` — copies those JSON files into `lib/scmapanalyzer/cache/maps/` for embedding.
 
 ```bash
-make tile-tagger
 make replay-map-analyzer
-make publish-tilesets
 make publish-maps
 ```
+
+Embedded `lib/scmapanalyzer/cache/maps/*.json` is only refreshed after you run the analyzer and `publish-maps`; until then it may still reflect an older coordinate convention.
 
 License: [MIT](LICENSE).
 

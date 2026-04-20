@@ -1,6 +1,4 @@
-scripts/
 replays/
 bin/
 .DS_Store
-output/tiletagger-result.json
 output/replaymap-analyzer/*.png
