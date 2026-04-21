@@ -116,14 +116,13 @@ func Analyze(meta *model.MapMetadata) (*AnalyzeOutput, error) {
 		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(expaCenters[i].X*8)), int(math.Round(expaCenters[i].Y*8)))
 		expaMask := expaMasks[i]
 		expaPolys[i] = BasePolygon{
-			Name:            "expa " + itoa(clock),
-			Kind:            "expa",
 			Clock:           clock,
 			CenterTile:      TilePoint{X: int(math.Round(expaCenters[i].X)), Y: int(math.Round(expaCenters[i].Y))},
 			PolygonVertices: maskToPolygon(w, h, expaMask),
 			MineralOnly:     mineralOnlyMask(w, h, expaMask, meta.Geysers),
 		}
 	}
+	nameExpansionBases(meta, w, h, expaPolys, expaMasks, startCenters, expaCenters, naturals)
 
 	for _, l := range naturals {
 		if l.StartIndex >= 0 && l.StartIndex < len(startPolys) && l.ExpaIndex >= 0 && l.ExpaIndex < len(expaPolys) {
@@ -557,14 +556,7 @@ func maskToPolygon(width int, height int, mask []bool) []TilePoint {
 }
 
 func oclock(widthTiles int, heightTiles int, x int, y int) int {
-	mapWidth := widthTiles * 32
-	mapHeight := heightTiles * 32
-	centerX := float64(mapWidth) / 2
-	centerY := float64(mapHeight) / 2
-	angle := math.Atan2(float64(y)-centerY, float64(x)-centerX) * 180.0 / math.Pi
-	if angle < 0 {
-		angle += 360
-	}
+	angle := rayAngleDegrees(widthTiles, heightTiles, x, y)
 	switch {
 	case angle >= 337.5 || angle < 22.5:
 		return 3

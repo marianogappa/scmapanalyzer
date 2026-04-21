@@ -61,7 +61,7 @@ func main() {
 		fatalf("mkdir output dir: %v", err)
 	}
 
-	ran := 0
+	var digest []digestEntry
 	for _, key := range keys {
 		rc := selected[key]
 		meta, parseErr := replay.ParseMapMetadata(rc.Path)
@@ -79,6 +79,11 @@ func main() {
 		if err := writeJSON(outJSONPath, out.Result); err != nil {
 			fatalf("write output json: %v", err)
 		}
+		dupes := replaymap.DuplicateNamesInResult(out.Result)
+		if len(dupes) > 0 {
+			fmt.Fprintf(os.Stderr, "WARNING: duplicate base names in map %s: %v\n", key, dupes)
+		}
+		digest = append(digest, digestEntry{Key: key, Result: out.Result, Dupes: dupes})
 		fmt.Printf("Wrote: %s\n", outJSONPath)
 
 		pngBytes, rendErr := mapgfx.RenderMapPNGFromMetadata(meta, mapgfx.RenderOptions{OverlayResources: true})
@@ -96,11 +101,23 @@ func main() {
 			fatalf("write overlay image: %v", err)
 		}
 		fmt.Printf("Wrote: %s\n", outImagePath)
-		ran++
 	}
-	if ran == 0 {
-		fatalf("replaymapanalyzer produced no successful runs")
+	if len(digest) == 0 {
+		fatalf("replaymapanalyzer produced no JSON output")
 	}
+	digestPath := filepath.Join(mapOutDir, "bases-digest.md")
+	digestToWrite := digest
+	if selector != "" {
+		var derr error
+		digestToWrite, derr = digestFromOutputJSON(mapOutDir)
+		if derr != nil {
+			fatalf("rebuild digest from output json: %v", derr)
+		}
+	}
+	if err := writeBasesDigest(digestPath, digestToWrite); err != nil {
+		fatalf("write bases digest: %v", err)
+	}
+	fmt.Printf("Wrote: %s\n", digestPath)
 }
 
 func selectUniqueMapReplays(replays []replayCandidate, selector string) map[string]replayCandidate {
