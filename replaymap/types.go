@@ -9,8 +9,10 @@ type TilePoint struct {
 }
 
 type BasePolygon struct {
-	Name             string      `json:"name"`
-	Kind             string      `json:"kind"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+	// Clock is minimap dial hour for starts and plain expansions (1,2,3,…,12).
+	// For the uniquely detected center expansion (name "center expa", kind "expa"), Clock is 0.
 	Clock            int         `json:"clock"`
 	CenterTile       TilePoint   `json:"center_tile"`
 	PolygonVertices  []TilePoint `json:"polygon_vertices"`

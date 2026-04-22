@@ -31211,7 +31211,7 @@
     {
       "name": "center expa",
       "kind": "expa",
-      "clock": 3,
+      "clock": 0,
       "center_tile": {
         "x": 256,
         "y": 256

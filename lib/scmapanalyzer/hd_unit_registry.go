@@ -48,6 +48,7 @@ var hdSpriteUnitNames = map[uint16]string{
 	84:  "Protoss Observer",
 	85:  "Protoss Scarab",
 	103: "Zerg Lurker",
+	106: "Terran Command Center",
 	107: "Terran Comsat Station",
 	108: "Terran Nuclear Silo",
 	109: "Terran Supply Depot",

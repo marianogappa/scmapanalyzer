@@ -9743,7 +9743,7 @@
     {
       "name": "center expa",
       "kind": "expa",
-      "clock": 6,
+      "clock": 0,
       "center_tile": {
         "x": 256,
         "y": 262

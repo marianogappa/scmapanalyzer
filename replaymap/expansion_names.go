@@ -16,7 +16,8 @@ const (
 // nameExpansionBases sets Name and Kind on each expansion polygon after all regions
 // and natural links are known. Naturals use kind "natural" and names like
 // "natural of 9" or "natural of 3, 6 & 9". At most one non-natural may be named
-// "center expa" when uniquely eligible. Remaining expansions use "expa {clock}"
+// "center expa" when uniquely eligible; that polygon's Clock is set to 0 (reserved:
+// map center, not a minimap dial hour). Remaining expansions use "expa {clock}"
 // with numeric suffixes if needed so all base names are unique.
 func nameExpansionBases(meta *model.MapMetadata, w int, h int, expaPolys []BasePolygon, expaMasks [][]bool, startCenters []point, expaCenters []point, naturals []NaturalLink) {
 	if len(expaPolys) == 0 {
@@ -69,6 +70,7 @@ func nameExpansionBases(meta *model.MapMetadata, w int, h int, expaPolys []BaseP
 	if centerPick >= 0 {
 		expaPolys[centerPick].Name = takeUniqueName(used, "center expa")
 		expaPolys[centerPick].Kind = "expa"
+		expaPolys[centerPick].Clock = 0
 	}
 
 	// 3) Remaining expansions: first pass uses [oclock] (8-way sectors). Bases
