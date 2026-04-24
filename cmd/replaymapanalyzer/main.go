@@ -96,7 +96,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "skip %s overlay: decode rendered png: %v\n", key, decodeErr)
 			continue
 		}
-		overlay := debugoverlay.ReplayMap(base, out.Debug)
+		overlay := debugoverlay.ReplayMap(base, out.Result, out.Debug)
 		if err := writePNG(outImagePath, overlay); err != nil {
 			fatalf("write overlay image: %v", err)
 		}
