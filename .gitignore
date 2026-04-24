@@ -3,3 +3,5 @@ bin/
 .trash/
 .DS_Store
 output/replaymap-analyzer/*.png
+output/replaymap-analyzer/*.html
+output/replaymap-analyzer/gallery/
