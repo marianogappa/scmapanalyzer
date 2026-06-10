@@ -34,6 +34,7 @@ func DetectBases(widthTiles int, heightTiles int, minerals []model.MapResource, 
 	}
 
 	_, _, _, _, labels := chooseMSTLabels(points)
+	labels = mergeCenterClusters(points, labels, widthTiles, heightTiles, starts)
 	bases := makeBases(points, labels)
 	if len(bases) == 0 {
 		return nil
@@ -200,6 +201,63 @@ func labelsFromMSTCuts(points []point, kNN int, alpha float64, beta float64) ([]
 		labels[i] = lbl
 	}
 	return labels, next
+}
+
+// centerMergeFrac defines a center circle whose radius is this fraction of the
+// shorter map dimension. Mirrors the "center base" notion used elsewhere.
+const centerMergeFrac = 0.11
+
+// mergeCenterClusters collapses the clusters whose centroids fall inside the map
+// center circle into a single base. Some maps (e.g. Fighting Spirit) lay out the
+// central base as two mineral+gas groups that MST clustering separates; macro
+// strategy treats them as one center base. The merge is intentionally scoped to
+// the center circle so it cannot affect bases elsewhere, and it is skipped when a
+// start location sits in the center (a center spawn owns its own minerals).
+func mergeCenterClusters(points []point, labels []int, widthTiles, heightTiles int, starts []model.StartLocation) []int {
+	if len(points) == 0 {
+		return labels
+	}
+	cx := float64(widthTiles) * 32 / 2
+	cy := float64(heightTiles) * 32 / 2
+	radius := centerMergeFrac * float64(minInt(widthTiles, heightTiles)) * 32
+
+	for _, sl := range starts {
+		if dist(float64(sl.X), float64(sl.Y), cx, cy) <= radius {
+			return labels
+		}
+	}
+
+	members := map[int][]int{}
+	for i, l := range labels {
+		if l >= 0 {
+			members[l] = append(members[l], i)
+		}
+	}
+	central := make([]int, 0, len(members))
+	for l, mem := range members {
+		c := centroid(points, mem)
+		if dist(c[0], c[1], cx, cy) <= radius {
+			central = append(central, l)
+		}
+	}
+	if len(central) < 2 {
+		return labels
+	}
+	sort.Ints(central)
+	target := central[0]
+	merge := map[int]bool{}
+	for _, l := range central[1:] {
+		merge[l] = true
+	}
+	out := make([]int, len(labels))
+	for i, l := range labels {
+		if merge[l] {
+			out[i] = target
+		} else {
+			out[i] = l
+		}
+	}
+	return out
 }
 
 func makeBases(points []point, labels []int) []model.Base {
@@ -497,6 +555,13 @@ func percentile(vals []float64, p float64) float64 {
 
 func maxInt(a int, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a int, b int) int {
+	if a < b {
 		return a
 	}
 	return b

@@ -18,6 +18,7 @@
 
 Images are hosted as GitHub release assets (tag [`gallery-v1`](https://github.com/marianogappa/scmapanalyzer/releases/tag/gallery-v1)), so they do not bloat the repo.
 
+![1-3](https://github.com/marianogappa/scmapanalyzer/releases/download/gallery-v1/1-3-overlay.png)
 ![1-4](https://github.com/marianogappa/scmapanalyzer/releases/download/gallery-v1/1-4-overlay.png)
 ![A-ttitude 1.0](https://github.com/marianogappa/scmapanalyzer/releases/download/gallery-v1/a-ttitude-1-0-overlay.png)
 ![Big Game Hunters](https://github.com/marianogappa/scmapanalyzer/releases/download/gallery-v1/big-game-hunters-overlay.png)
