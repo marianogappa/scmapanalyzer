@@ -13,7 +13,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/marianogappa/scmapanalyzer/internal/mapgfx/grp"
+	"github.com/marianogappa/scmapanalyzer/internal/mapgfx/sprite"
 	"github.com/marianogappa/scmapanalyzer/internal/mapgfx/tileset"
 )
 
@@ -69,9 +69,9 @@ func spriteImageRGBA(spriteName string, palette color.Palette) (*image.RGBA, err
 	}
 	b, err := fs.ReadFile(assets, path.Join("data", "sprites", rel))
 	if err != nil {
-		return nil, fmt.Errorf("read sprite grp %s: %w", rel, err)
+		return nil, fmt.Errorf("read sprite %s: %w", rel, err)
 	}
-	return grp.DecodeFrameRGBA(b, 0, palette)
+	return sprite.DecodeRGBA(b, palette)
 }
 
 // RenderMapPNG renders the map to PNG bytes (32 px per map tile). Resource coordinates are pixels.
@@ -83,11 +83,11 @@ func RenderMapPNG(md MapData, opts RenderOptions) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := tileset.LoadFromFS(assets, folder)
+	pack, err := tileset.LoadPackFromFS(assets, folder)
 	if err != nil {
 		return nil, err
 	}
-	base, err := tileset.RenderMapToPaletted(raw, md.Width, md.Height, md.Tiles)
+	base, err := tileset.RenderPackToPaletted(pack, md.Width, md.Height, md.Tiles)
 	if err != nil {
 		return nil, err
 	}
@@ -97,10 +97,7 @@ func RenderMapPNG(md MapData, opts RenderOptions) ([]byte, error) {
 
 	rgba := image.NewRGBA(base.Bounds())
 	draw.Draw(rgba, rgba.Bounds(), base, image.Point{}, draw.Src)
-	pal, err := tileset.PaletteFromWPE(raw.WPE)
-	if err != nil {
-		return nil, err
-	}
+	pal := pack.Palette
 
 	mineralNames := []string{"neutral/min01", "neutral/min02", "neutral/min03"}
 	for i, p := range md.Minerals {
