@@ -75,8 +75,9 @@ func nameExpansionBases(meta *model.MapMetadata, w int, h int, expaPolys []BaseP
 
 	// 3) Remaining expansions: first pass uses [oclock] (8-way sectors). Bases
 	// that would share the same "expa N" name re-use [oclockFloat] and a uniform
-	// 1..12 dial ([nearestUniformDialHour]) so 2, 4, 8, 10 can appear. Any
-	// remaining string collision gets " (2)" suffixes.
+	// 1..12 dial ([nearestUniformDialHour]) so 2, 4, 8, 10 can appear. If two
+	// expansions still share the same clock after dial refinement (radially
+	// stacked bases), the one closer to the map center is prefixed "inner".
 	wt, ht := meta.WidthTiles, meta.HeightTiles
 	plainEis := make([]int, 0, len(expaPolys))
 	for ei := range expaPolys {
@@ -124,6 +125,8 @@ func nameExpansionBases(meta *model.MapMetadata, w int, h int, expaPolys []BaseP
 		}
 	}
 
+	isInner := radiallyStackedInner(wt, ht, plainEis, cFin, expaCenters)
+
 	type rem struct {
 		ei    int
 		clock int
@@ -145,10 +148,55 @@ func nameExpansionBases(meta *model.MapMetadata, w int, h int, expaPolys []BaseP
 	})
 	for _, r := range remaining {
 		base := "expa " + itoa(r.clock)
+		if isInner[r.ei] {
+			base = "inner " + base
+		}
 		expaPolys[r.ei].Name = takeUniqueName(used, base)
 		expaPolys[r.ei].Kind = "expa"
 		expaPolys[r.ei].Clock = r.clock
 	}
+}
+
+// radiallyStackedInner returns a per-expansion flag that is true for expansions
+// that share a final clock position with another expansion and are closer to
+// the map center (i.e. they are the "inner" base of a radially-stacked pair).
+// In a same-clock group, only the farthest expansion is considered "outer" and
+// keeps the plain "expa N" name; all others are "inner".
+func radiallyStackedInner(widthTiles int, heightTiles int, plainEis []int, cFin []int, expaCenters []point) []bool {
+	isInner := make([]bool, len(cFin))
+
+	clockGroups := make(map[int][]int)
+	for _, ei := range plainEis {
+		clockGroups[cFin[ei]] = append(clockGroups[cFin[ei]], ei)
+	}
+
+	mapCX := float64(widthTiles) * 16.0
+	mapCY := float64(heightTiles) * 16.0
+
+	for _, group := range clockGroups {
+		if len(group) < 2 {
+			continue
+		}
+		farthestEi := group[0]
+		farthestD2 := 0.0
+		for _, ei := range group {
+			cx := expaCenters[ei].X * 8
+			cy := expaCenters[ei].Y * 8
+			dx := cx - mapCX
+			dy := cy - mapCY
+			d2 := dx*dx + dy*dy
+			if d2 > farthestD2 {
+				farthestD2 = d2
+				farthestEi = ei
+			}
+		}
+		for _, ei := range group {
+			if ei != farthestEi {
+				isInner[ei] = true
+			}
+		}
+	}
+	return isInner
 }
 
 func uniqSortedStartIndices(idxs []int) []int {

@@ -20,8 +20,10 @@ type invariant struct {
 var expected = map[string]invariant{
 	"1-3":                     {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true},
 	"1-4":                     {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true},
+	"a-iolos-1-0b":            {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true},
 	"a-ttitude-1-0":           {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
 	"big-game-hunters":        {starts: 8, expas: 9, centerBases: 1, everyStartHasNatural: true},
+	"c-olorless-f-ate-1-1":    {starts: 2, expas: 10, centerBases: 0, everyStartHasNatural: true},
 	"d-o-m-i-n-a-t-o-r-se-2":  {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true},
 	"j-ane-d-oe-1-2":          {starts: 2, expas: 10, centerBases: 0, everyStartHasNatural: true},
 	"knockout-1-4":            {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
@@ -31,6 +33,7 @@ var expected = map[string]invariant{
 	"m-atch-point-remastered": {starts: 2, expas: 8, centerBases: 0, everyStartHasNatural: true},
 	"metropolis-1-1":          {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true},
 	"neo-sylphid-3-2":         {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true},
+	"o-dyssey-re-2-0":         {starts: 2, expas: 12, centerBases: 0, everyStartHasNatural: true},
 	"octagon-1-0":             {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
 	"p-ole-s-tar-1-1":         {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
 	"polyp-oid-1-32":          {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
