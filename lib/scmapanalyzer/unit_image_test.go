@@ -29,8 +29,8 @@ func TestUnitOrBuildingImagePNG_unknownName(t *testing.T) {
 	}
 }
 
-func TestMapImagePNGFromScrepReplay_nil(t *testing.T) {
-	_, err := MapImagePNGFromScrepReplay(nil)
+func TestMapImageJPEGFromScrepReplay_nil(t *testing.T) {
+	_, err := MapImageJPEGFromScrepReplay(nil, MapImageOptions{})
 	if err == nil {
 		t.Fatal("expected error")
 	}
