@@ -105,15 +105,22 @@ func DecodePack(b []byte) (*Pack, error) {
 // original cv5/vx4ex/vr4 pipeline, including its out-of-range skips (which leave
 // palette index 0).
 func RenderPackToPaletted(p *Pack, widthTiles, heightTiles int, tiles []uint16) (*image.Paletted, error) {
+	return RenderPackRegionToPaletted(p, widthTiles, heightTiles, tiles, 0, 0, widthTiles, heightTiles)
+}
+
+// RenderPackRegionToPaletted renders only the tile rect (rx, ry, rw, rh) of the map.
+// The returned image keeps map-pixel coordinates: its bounds start at (rx*32, ry*32).
+func RenderPackRegionToPaletted(p *Pack, widthTiles, heightTiles int, tiles []uint16, rx, ry, rw, rh int) (*image.Paletted, error) {
 	if len(tiles) != widthTiles*heightTiles {
 		return nil, fmt.Errorf("tiles length mismatch: got %d expected %d", len(tiles), widthTiles*heightTiles)
 	}
-	imgW := widthTiles * 32
-	imgH := heightTiles * 32
-	img := image.NewPaletted(image.Rect(0, 0, imgW, imgH), p.Palette)
+	if rw <= 0 || rh <= 0 || rx < 0 || ry < 0 || rx+rw > widthTiles || ry+rh > heightTiles {
+		return nil, fmt.Errorf("tile rect (%d,%d %dx%d) out of map bounds %dx%d", rx, ry, rw, rh, widthTiles, heightTiles)
+	}
+	img := image.NewPaletted(image.Rect(rx*32, ry*32, (rx+rw)*32, (ry+rh)*32), p.Palette)
 
-	for ty := 0; ty < heightTiles; ty++ {
-		for tx := 0; tx < widthTiles; tx++ {
+	for ty := ry; ty < ry+rh; ty++ {
+		for tx := rx; tx < rx+rw; tx++ {
 			tileID := int(tiles[ty*widthTiles+tx])
 			if tileID >= len(p.TileMegatile) {
 				continue
