@@ -6,5 +6,8 @@
 // [MapImageJPEGFromScrepReplay] render a downscaled JPEG sized for on-screen display,
 // and [MapImagePNGCropFromReplayFile] renders a native-resolution tile-rect crop for
 // compositing. [UnitOrBuildingImagePNG] returns unit sprites (HD sprites are
-// hd_units/u<ID>.qoi with display names in [hdSpriteUnitNames]).
+// hd_units/u<ID>.qoi with display names in [hdSpriteUnitNames]). [UnitOrBuildingImage] tints a
+// sprite with a player's team color and selects variants such as [UnitVariantBurrowed];
+// [UnitOrBuildingImageLayers] returns the untinted sprite and its team-color mask
+// (hd_units/u<ID>.mask.png) for callers that tint on their own.
 package scmapanalyzer
