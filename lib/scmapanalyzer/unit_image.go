@@ -106,12 +106,24 @@ const (
 // would be misleading, so the library does not fall back on its own.
 var ErrUnitVariantNotAvailable = errors.New("unit variant not available")
 
+// ErrShadowNotAvailable is returned for units the game draws without a shadow (e.g. archons,
+// dark templar, burrowed units).
+var ErrShadowNotAvailable = errors.New("unit shadow not available")
+
 // UnitImageOptions controls [UnitOrBuildingImage].
 type UnitImageOptions struct {
 	// TeamColor tints the unit's team-color areas. Nil leaves them untinted.
 	TeamColor color.Color
 	Variant   UnitVariant
+	// Shadow selects the unit's shadow instead of the unit itself: black, already at the game's
+	// shadow opacity, meant to be drawn under every unit and building. Air units' shadows sit well
+	// below them; place it with [UnitImageAnchor] like the sprite. TeamColor does not apply.
+	Shadow bool
 }
+
+// shadowOpacity matches the game: SD draws shadows through dark.pcx light level 18, which keeps
+// about 53% of the ground's brightness.
+const shadowOpacity = 0.47
 
 // TeamColorFromScrep converts a replay player color to a team color.
 func TeamColorFromScrep(c *repcore.Color) color.NRGBA {
@@ -166,9 +178,63 @@ func UnitOrBuildingImageLayers(name string, variant UnitVariant) (*image.NRGBA, 
 	return img, mask, nil
 }
 
-// UnitOrBuildingImage returns a unit or building sprite, tinted with opts.TeamColor.
-// Name is resolved as in [UnitOrBuildingImagePNG].
+// UnitImageAnchor returns where the unit's position (its map coordinates, the center of a
+// building's footprint) falls inside the image [UnitOrBuildingImage] returns for opts: draw the
+// image with its top-left at position-anchor. Sprites are at 2 image pixels per map pixel, so a
+// map renderer at 1:1 halves both the image and the anchor. ok is false for unknown names and
+// unavailable variants or shadows.
+func UnitImageAnchor(name string, opts UnitImageOptions) (x, y int, ok bool) {
+	id, err := resolveUnitOrBuildingID(name)
+	if err != nil {
+		return 0, 0, false
+	}
+	key := strings.TrimPrefix(hdSpriteBaseName(id, opts.Variant), "hd_units/")
+	if opts.Shadow {
+		key += ".shadow"
+	}
+	p, ok := hdSpriteAnchors[key]
+	return p.X, p.Y, ok
+}
+
+// UnitShadowImage returns the shadow the game draws under a unit or building; see
+// [UnitImageOptions.Shadow].
+func UnitShadowImage(name string, variant UnitVariant) (*image.NRGBA, error) {
+	id, err := resolveUnitOrBuildingID(name)
+	if err != nil {
+		return nil, err
+	}
+	base := hdSpriteBaseName(id, variant)
+	b, err := fs.ReadFile(hdQoiFiles, base+".shadow.png")
+	if errors.Is(err, fs.ErrNotExist) {
+		if _, err := fs.Stat(hdQoiFiles, base+".qoi"); errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%w: %q for %s", ErrUnitVariantNotAvailable, variant, name)
+		}
+		return nil, fmt.Errorf("%w for %s", ErrShadowNotAvailable, name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read hd unit shadow: %w", err)
+	}
+	decoded, err := png.Decode(bytes.NewReader(b))
+	if err != nil {
+		return nil, fmt.Errorf("decode hd unit shadow: %w", err)
+	}
+	coverage, ok := decoded.(*image.Gray)
+	if !ok {
+		return nil, fmt.Errorf("hd unit shadow for %s is not grayscale", name)
+	}
+	img := image.NewNRGBA(coverage.Bounds())
+	for i, c := range coverage.Pix {
+		img.Pix[i*4+3] = uint8(float64(c)*shadowOpacity + 0.5)
+	}
+	return img, nil
+}
+
+// UnitOrBuildingImage returns a unit or building sprite, tinted with opts.TeamColor, or its
+// shadow when opts.Shadow is set. Name is resolved as in [UnitOrBuildingImagePNG].
 func UnitOrBuildingImage(name string, opts UnitImageOptions) (*image.NRGBA, error) {
+	if opts.Shadow {
+		return UnitShadowImage(name, opts.Variant)
+	}
 	img, mask, err := UnitOrBuildingImageLayers(name, opts.Variant)
 	if err != nil {
 		return nil, err
