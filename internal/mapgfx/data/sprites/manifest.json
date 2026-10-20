@@ -5,8 +5,12 @@
     "min02": "neutral__min02.spr",
     "min03": "neutral__min03.spr",
     "neutral/geyser": "neutral__geyser.spr",
+    "neutral/geyshad": "neutral__geyshad.spr",
     "neutral/min01": "neutral__min01.spr",
+    "neutral/min01sha": "neutral__min01sha.spr",
     "neutral/min02": "neutral__min02.spr",
-    "neutral/min03": "neutral__min03.spr"
+    "neutral/min02sha": "neutral__min02sha.spr",
+    "neutral/min03": "neutral__min03.spr",
+    "neutral/min03sha": "neutral__min03sha.spr"
   }
 }

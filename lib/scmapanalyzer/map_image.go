@@ -53,6 +53,23 @@ func MapImageJPEGFromScrepReplay(rep *rep.Replay, opts MapImageOptions) ([]byte,
 // tile rect of the map terrain at native resolution (32 px per map tile), as a base for
 // compositing sprites on top. Resource sprites straddling the rect edge are clipped to it.
 func MapImagePNGCropFromReplayFile(replayPath string, r TileRect) ([]byte, error) {
+	return mapPNGCropFromReplayFile(replayPath, r, DefaultMapImageRenderOptions)
+}
+
+// MapTerrainPNGCropFromReplayFile is [MapImagePNGCropFromReplayFile] without the resource sprites:
+// the floor layer, for drawing creep over it before [MapResourcesPNGCropFromReplayFile].
+func MapTerrainPNGCropFromReplayFile(replayPath string, r TileRect) ([]byte, error) {
+	return mapPNGCropFromReplayFile(replayPath, r, mapgfx.RenderOptions{})
+}
+
+// MapResourcesPNGCropFromReplayFile returns only the mineral field and geyser sprites, over their
+// shadows, on a transparent background, with the same tile rect and 32 px per tile as
+// [MapTerrainPNGCropFromReplayFile]. Sprites straddling the rect edge are clipped to it.
+func MapResourcesPNGCropFromReplayFile(replayPath string, r TileRect) ([]byte, error) {
+	return mapPNGCropFromReplayFile(replayPath, r, mapgfx.RenderOptions{ResourcesOnly: true, ResourceShadows: true})
+}
+
+func mapPNGCropFromReplayFile(replayPath string, r TileRect, opts mapgfx.RenderOptions) ([]byte, error) {
 	if replayPath == "" {
 		return nil, errors.New("replay path is required")
 	}
@@ -60,7 +77,7 @@ func MapImagePNGCropFromReplayFile(replayPath string, r TileRect) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	return mapgfx.RenderMapPNGCropFromMetadata(meta, DefaultMapImageRenderOptions, mapgfx.TileRect(r))
+	return mapgfx.RenderMapPNGCropFromMetadata(meta, opts, mapgfx.TileRect(r))
 }
 
 func jpegOptions(opts MapImageOptions) mapgfx.JPEGOptions {

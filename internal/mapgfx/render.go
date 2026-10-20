@@ -35,7 +35,14 @@ type Point struct {
 
 type RenderOptions struct {
 	OverlayResources bool
+	// ResourcesOnly renders mineral and geyser sprites, under their shadows when ResourceShadows is
+	// set, on a transparent background instead of terrain, so callers can draw creep in between.
+	ResourcesOnly   bool
+	ResourceShadows bool
 }
+
+// resourceShadowAlpha matches the game's shadow darkness (see lib/scmapanalyzer shadowOpacity).
+const resourceShadowAlpha = 120
 
 type spriteManifest struct {
 	Sprites map[string]string `json:"sprites"`
@@ -154,36 +161,69 @@ func renderMapRegion(md MapData, opts RenderOptions, r TileRect) (image.Image, e
 	if err != nil {
 		return nil, err
 	}
-	base, err := tileset.RenderPackRegionToPaletted(pack, md.Width, md.Height, md.Tiles, r.X, r.Y, r.W, r.H)
-	if err != nil {
-		return nil, err
+	var rgba *image.RGBA
+	if opts.ResourcesOnly {
+		if err := tileRectInMap(md, r); err != nil {
+			return nil, err
+		}
+		rgba = image.NewRGBA(image.Rect(r.X*32, r.Y*32, (r.X+r.W)*32, (r.Y+r.H)*32))
+	} else {
+		base, err := tileset.RenderPackRegionToPaletted(pack, md.Width, md.Height, md.Tiles, r.X, r.Y, r.W, r.H)
+		if err != nil {
+			return nil, err
+		}
+		if !opts.OverlayResources {
+			return base, nil
+		}
+		// Keep map-pixel coordinates so sprite draws land at absolute resource
+		// positions and draw.Draw clips them to the crop for free.
+		rgba = image.NewRGBA(base.Bounds())
+		draw.Draw(rgba, rgba.Bounds(), base, base.Bounds().Min, draw.Src)
 	}
-	if !opts.OverlayResources {
-		return base, nil
-	}
-
-	// Keep map-pixel coordinates so sprite draws land at absolute resource
-	// positions and draw.Draw clips them to the crop for free.
-	rgba := image.NewRGBA(base.Bounds())
-	draw.Draw(rgba, rgba.Bounds(), base, base.Bounds().Min, draw.Src)
 	pal := pack.Palette
 
+	type resource struct {
+		name string
+		at   Point
+	}
+	var resources []resource
 	mineralNames := []string{"neutral/min01", "neutral/min02", "neutral/min03"}
 	for i, p := range md.Minerals {
-		spr, err := spriteImageRGBA(mineralNames[i%len(mineralNames)], pal)
-		if err != nil {
-			return nil, err
-		}
-		drawSpriteCentered(rgba, spr, p)
+		resources = append(resources, resource{mineralNames[i%len(mineralNames)], p})
 	}
 	for _, p := range md.Geysers {
-		spr, err := spriteImageRGBA("neutral/geyser", pal)
+		resources = append(resources, resource{"neutral/geyser", p})
+	}
+	if opts.ResourceShadows {
+		shadowNames := map[string]string{"neutral/min01": "neutral/min01sha", "neutral/min02": "neutral/min02sha", "neutral/min03": "neutral/min03sha", "neutral/geyser": "neutral/geyshad"}
+		for _, res := range resources {
+			spr, err := spriteImageRGBA(shadowNames[res.name], pal)
+			if err != nil {
+				return nil, err
+			}
+			for i := 0; i < len(spr.Pix); i += 4 {
+				if spr.Pix[i+3] != 0 {
+					spr.Pix[i], spr.Pix[i+1], spr.Pix[i+2], spr.Pix[i+3] = 0, 0, 0, resourceShadowAlpha
+				}
+			}
+			drawSpriteCentered(rgba, spr, res.at)
+		}
+	}
+	for _, res := range resources {
+		spr, err := spriteImageRGBA(res.name, pal)
 		if err != nil {
 			return nil, err
 		}
-		drawSpriteCentered(rgba, spr, p)
+		drawSpriteCentered(rgba, spr, res.at)
 	}
 	return rgba, nil
+}
+
+func tileRectInMap(md MapData, r TileRect) error {
+	if r.W <= 0 || r.H <= 0 || r.X < 0 || r.Y < 0 || r.X+r.W > md.Width || r.Y+r.H > md.Height {
+		return fmt.Errorf("tile rect (%d,%d %dx%d) out of map bounds %dx%d", r.X, r.Y, r.W, r.H, md.Width, md.Height)
+	}
+	return nil
 }
 
 func drawSpriteCentered(dst *image.RGBA, spr *image.RGBA, p Point) {
