@@ -43,35 +43,39 @@ func decodeCreepGrp(grp, wpe []byte) (*image.NRGBA, error) {
 	}
 	atlas := image.NewNRGBA(image.Rect(0, 0, 32*n, 32))
 	for f := range n {
-		h := grp[6+f*8:]
-		fx, fy, fw, fh := int(h[0]), int(h[1]), int(h[2]), int(h[3])
-		off := int(binary.LittleEndian.Uint32(h[4:]))
-		set := func(x, y int, idx byte) {
-			atlas.SetNRGBA(32*f+fx+x, fy+y, color.NRGBA{wpe[int(idx)*4], wpe[int(idx)*4+1], wpe[int(idx)*4+2], 255})
-		}
-		for y := range fh {
-			p := off + int(binary.LittleEndian.Uint16(grp[off+y*2:]))
-			for x := 0; x < fw; {
-				c := int(grp[p])
+		decodeGrpFrame(grp, f, func(x, y int, idx byte) {
+			atlas.SetNRGBA(32*f+x, y, color.NRGBA{wpe[int(idx)*4], wpe[int(idx)*4+1], wpe[int(idx)*4+2], 255})
+		})
+	}
+	return atlas, nil
+}
+
+// decodeGrpFrame calls set for every painted pixel of a GRP frame, in grp canvas coordinates.
+func decodeGrpFrame(grp []byte, f int, set func(x, y int, idx byte)) {
+	h := grp[6+f*8:]
+	fx, fy, fw, fh := int(h[0]), int(h[1]), int(h[2]), int(h[3])
+	off := int(binary.LittleEndian.Uint32(h[4:]))
+	for y := range fh {
+		p := off + int(binary.LittleEndian.Uint16(grp[off+y*2:]))
+		for x := 0; x < fw; {
+			c := int(grp[p])
+			p++
+			switch {
+			case c&0x80 != 0:
+				x += c & 0x7f
+			case c&0x40 != 0:
+				for range c & 0x3f {
+					set(fx+x, fy+y, grp[p])
+					x++
+				}
 				p++
-				switch {
-				case c&0x80 != 0:
-					x += c & 0x7f
-				case c&0x40 != 0:
-					for range c & 0x3f {
-						set(x, y, grp[p])
-						x++
-					}
+			default:
+				for range c {
+					set(fx+x, fy+y, grp[p])
 					p++
-				default:
-					for range c {
-						set(x, y, grp[p])
-						p++
-						x++
-					}
+					x++
 				}
 			}
 		}
 	}
-	return atlas, nil
 }

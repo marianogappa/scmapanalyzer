@@ -1,7 +1,7 @@
 // Command hdbake builds the unit sprites embedded in lib/scmapanalyzer/hd_units from a local
 // StarCraft: Remastered install, reading HD2/anim/main_NNN.anim and the arr/*.dat, images.tbl,
 // iscript.bin and LO offset files straight from its CASC storage. It also bakes each tileset's
-// creep edge frames for internal/mapgfx.
+// creep edge frames and the resource shadows for internal/mapgfx.
 //
 // Most sprites were baked earlier from a single HD2 frame and then hand-tuned, so they are kept
 // as they are: hdbake finds the frame and crop each one came from and records where the unit's
@@ -84,8 +84,9 @@ func main() {
 	unitsDir := flag.String("units", "lib/scmapanalyzer/hd_units", "directory of embedded u<ID>.qoi sprites")
 	anchorsFile := flag.String("anchors", "lib/scmapanalyzer/hd_unit_anchors.go", "generated anchors Go file")
 	tilesetsDir := flag.String("tilesets", "internal/mapgfx/data/tilesets", "directory for creep_edges.png per tileset")
+	spritesDir := flag.String("sprites", "internal/mapgfx/data/sprites", "directory for resource shadow sprites")
 	flag.Parse()
-	if err := run(*scDir, *unitsDir, *anchorsFile, *tilesetsDir); err != nil {
+	if err := run(*scDir, *unitsDir, *anchorsFile, *tilesetsDir, *spritesDir); err != nil {
 		fmt.Fprintln(os.Stderr, "hdbake:", err)
 		os.Exit(1)
 	}
@@ -97,13 +98,16 @@ type baker struct {
 	anims map[int]*anim
 }
 
-func run(scDir, unitsDir, anchorsFile, tilesetsDir string) error {
+func run(scDir, unitsDir, anchorsFile, tilesetsDir, spritesDir string) error {
 	st, err := casc.Open(scDir)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
 	if err := bakeCreepEdges(st, tilesetsDir); err != nil {
+		return err
+	}
+	if err := bakeResourceShadows(st, spritesDir); err != nil {
 		return err
 	}
 	data, err := loadGameData(st.ReadFile)
