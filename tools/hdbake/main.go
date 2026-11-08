@@ -66,10 +66,21 @@ func composites(d *gameData) (map[int]composite, error) {
 	if err != nil {
 		return nil, err
 	}
+	idle := func(imageID, frame int) composite {
+		return composite{layers: []layer{{image: imageID, frame: frame}}, shadowOf: 0}
+	}
 	return map[int]composite{
-		3:  {layers: goliath, shadowOf: 0},
-		5:  {layers: tank, shadowOf: 0},
-		30: {layers: siege, shadowOf: 0},
+		// The zergling, hydralisk, medic, corsair, scout and sunken colony were baked from attack or
+		// heal frames, so they are rendered from their iscript init pose at the facing they had.
+		37:  idle(54, 5*17+facing),
+		38:  idle(29, 5*17+facing),
+		34:  idle(944, facing),
+		60:  idle(929, facing),
+		70:  idle(140, 4),
+		146: idle(76, 0),
+		3:   {layers: goliath, shadowOf: 0},
+		5:   {layers: tank, shadowOf: 0},
+		30:  {layers: siege, shadowOf: 0},
 		// Dark templar: images.dat id 933 has no HD2 anim; image 129 shares its grp (dtemplar.grp).
 		// Frame set 13 is its iscript init pose. DTs cast no shadow.
 		61: {layers: []layer{{image: 129, frame: 13*17 + facing}}, shadowOf: -1},
