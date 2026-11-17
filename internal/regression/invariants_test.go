@@ -12,34 +12,35 @@ type invariant struct {
 	expas                int
 	centerBases          int // bases inside the map's center circle (see geometry.go)
 	everyStartHasNatural bool
+	chokedStarts         int // starts with a choke leading straight into their natural
 }
 
 // expected captures CURRENT accepted behavior across the corpus. Keep this green.
 // When you intentionally change detection output, bump the affected entry in the
 // same PR so the diff records the decision.
 var expected = map[string]invariant{
-	"1-3":                     {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true},
-	"1-4":                     {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true},
-	"a-iolos-1-0b":            {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"a-ttitude-1-0":           {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"big-game-hunters":        {starts: 8, expas: 9, centerBases: 1, everyStartHasNatural: true},
-	"c-olorless-f-ate-1-1":    {starts: 2, expas: 10, centerBases: 0, everyStartHasNatural: true},
-	"d-o-m-i-n-a-t-o-r-se-2":  {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"j-ane-d-oe-1-2":          {starts: 2, expas: 10, centerBases: 0, everyStartHasNatural: true},
-	"knockout-1-4":            {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"l-a-c-ampanella-1-1":     {starts: 4, expas: 13, centerBases: 1, everyStartHasNatural: true},
-	"la-mancha-1-1":           {starts: 5, expas: 7, centerBases: 0, everyStartHasNatural: true},
-	"lit-mus-1-1":             {starts: 2, expas: 11, centerBases: 1, everyStartHasNatural: true},
-	"m-atch-point-remastered": {starts: 2, expas: 8, centerBases: 0, everyStartHasNatural: true},
-	"metropolis-1-1":          {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true},
-	"neo-sylphid-3-2":         {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"o-dyssey-re-2-0":         {starts: 2, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"octagon-1-0":             {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"p-ole-s-tar-1-1":         {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"polyp-oid-1-32":          {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"polyp-oid-1-75":          {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true},
-	"r-a-d-e-o-n-1-2":         {starts: 4, expas: 10, centerBases: 0, everyStartHasNatural: true},
-	"retro-1-2":               {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true},
+	"1-3":                     {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true, chokedStarts: 4},
+	"1-4":                     {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true, chokedStarts: 4},
+	"a-iolos-1-0b":            {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 0},
+	"a-ttitude-1-0":           {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 4},
+	"big-game-hunters":        {starts: 8, expas: 9, centerBases: 1, everyStartHasNatural: true, chokedStarts: 7},
+	"c-olorless-f-ate-1-1":    {starts: 2, expas: 10, centerBases: 0, everyStartHasNatural: true, chokedStarts: 2},
+	"d-o-m-i-n-a-t-o-r-se-2":  {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 3},
+	"j-ane-d-oe-1-2":          {starts: 2, expas: 10, centerBases: 0, everyStartHasNatural: true, chokedStarts: 2},
+	"knockout-1-4":            {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 4},
+	"l-a-c-ampanella-1-1":     {starts: 4, expas: 13, centerBases: 1, everyStartHasNatural: true, chokedStarts: 1},
+	"la-mancha-1-1":           {starts: 5, expas: 7, centerBases: 0, everyStartHasNatural: true, chokedStarts: 4},
+	"lit-mus-1-1":             {starts: 2, expas: 11, centerBases: 1, everyStartHasNatural: true, chokedStarts: 2},
+	"m-atch-point-remastered": {starts: 2, expas: 8, centerBases: 0, everyStartHasNatural: true, chokedStarts: 2},
+	"metropolis-1-1":          {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true, chokedStarts: 4},
+	"neo-sylphid-3-2":         {starts: 3, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 3},
+	"o-dyssey-re-2-0":         {starts: 2, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 2},
+	"octagon-1-0":             {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 4},
+	"p-ole-s-tar-1-1":         {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 4},
+	"polyp-oid-1-32":          {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 4},
+	"polyp-oid-1-75":          {starts: 4, expas: 12, centerBases: 0, everyStartHasNatural: true, chokedStarts: 4},
+	"r-a-d-e-o-n-1-2":         {starts: 4, expas: 10, centerBases: 0, everyStartHasNatural: true, chokedStarts: 4},
+	"retro-1-2":               {starts: 4, expas: 9, centerBases: 1, everyStartHasNatural: true, chokedStarts: 4},
 }
 
 func TestSemanticInvariants(t *testing.T) {
@@ -70,6 +71,9 @@ func TestSemanticInvariants(t *testing.T) {
 			}
 			if want.everyStartHasNatural && !everyStartHasNatural(out.Result) {
 				t.Errorf("not every start has a natural expansion")
+			}
+			if got := startsChokedToNatural(out.Result); got != want.chokedStarts {
+				t.Errorf("chokedStarts = %d, want %d", got, want.chokedStarts)
 			}
 		})
 	}

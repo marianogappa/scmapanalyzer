@@ -57,6 +57,11 @@ func ReplayMap(base image.Image, result *replaymap.Result, debug *replaymap.Debu
 	drawCategoryTiles(canvas, debug.WallMask, debug.WidthMinitiles, debug.HeightMinitiles, stepX, stepY, wallFill, wallStroke)
 	drawCategoryTiles(canvas, debug.RampMask, debug.WidthMinitiles, debug.HeightMinitiles, stepX, stepY, rampFill, rampStroke)
 	if result != nil {
+		for _, b := range append(append([]replaymap.BasePolygon{}, result.Starts...), result.Expas...) {
+			for _, c := range b.Chokes {
+				drawChoke(canvas, c, stepX)
+			}
+		}
 		for _, b := range result.Starts {
 			drawBaseLabel(canvas, b, stepX, stepY, bounds)
 		}

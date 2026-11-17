@@ -87,6 +87,12 @@ func compareGeometry(t *testing.T, golden, got *replaymap.Result) {
 			continue
 		}
 		matched[gb.Name] = true
+		if gb.Kind != cur.Kind || gb.Clock != cur.Clock || gb.MineralOnly != cur.MineralOnly ||
+			gb.NaturalExpansion != cur.NaturalExpansion || gb.CenterTile != cur.CenterTile {
+			t.Errorf("base %q identity changed: golden={kind:%s clock:%d mineralOnly:%v natural:%q center:%v} now={kind:%s clock:%d mineralOnly:%v natural:%q center:%v}",
+				gb.Name, gb.Kind, gb.Clock, gb.MineralOnly, gb.NaturalExpansion, gb.CenterTile,
+				cur.Kind, cur.Clock, cur.MineralOnly, cur.NaturalExpansion, cur.CenterTile)
+		}
 		if d := centerDist(gb.CenterTile, cur.CenterTile); d > maxCenterDistTiles {
 			t.Errorf("base %q center drifted %.1f minitiles (max %.0f): golden=%v now=%v",
 				gb.Name, d, maxCenterDistTiles, gb.CenterTile, cur.CenterTile)
@@ -137,9 +143,10 @@ func TestCorpusSummary(t *testing.T) {
 	results := analyzeCorpus(t)
 	for _, key := range sortedKeys(results) {
 		out := results[key]
-		fmt.Printf("%-30s starts=%d expas=%d centerBases=%d clock0=%d everyStartNatural=%v\n",
+		fmt.Printf("%-30s starts=%d expas=%d centerBases=%d clock0=%d everyStartNatural=%v startsWithChoke=%d startsChokedToNatural=%d\n",
 			key, len(out.Result.Starts), len(out.Result.Expas),
-			centerBaseCount(out), clock0Count(out.Result), everyStartHasNatural(out.Result))
+			centerBaseCount(out), clock0Count(out.Result), everyStartHasNatural(out.Result),
+			startsWithChoke(out.Result), startsChokedToNatural(out.Result))
 	}
 }
 
@@ -160,4 +167,29 @@ func everyStartHasNatural(r *replaymap.Result) bool {
 		}
 	}
 	return len(r.Starts) > 0
+}
+
+func startsWithChoke(r *replaymap.Result) int {
+	n := 0
+	for _, s := range r.Starts {
+		if len(s.Chokes) > 0 {
+			n++
+		}
+	}
+	return n
+}
+
+// startsChokedToNatural counts mains with a choke leading straight into their
+// own natural, i.e. the ramp a contain or a wall-off is built around.
+func startsChokedToNatural(r *replaymap.Result) int {
+	n := 0
+	for _, s := range r.Starts {
+		for _, c := range s.Chokes {
+			if c.ConnectsTo != "" && c.ConnectsTo == s.NaturalExpansion {
+				n++
+				break
+			}
+		}
+	}
+	return n
 }

@@ -4,6 +4,7 @@ OUTPUT_DIR ?= output
 REPLAYS_DIR ?= replays
 ONLY_RUN_MAP ?=
 GALLERY_MAX_DIM ?= 1536
+GALLERY_JPEG_QUALITY ?= 80
 GALLERY_TAG ?=
 
 NIGHTLY_MAPS_DIR := $(OUTPUT_DIR)/replaymap-analyzer
@@ -37,7 +38,7 @@ replay-map-gallery:
 	} > "$$out"; \
 	echo "Wrote: $$out"
 
-# Build downscaled overlays under $(GALLERY_DIR) for attaching to a GitHub
+# Build downscaled JPEG overlays under $(GALLERY_DIR) for attaching to a GitHub
 # release. Source files come from a prior `make replay-map-analyzer` run.
 # Override max dimension: make gallery-assets GALLERY_MAX_DIM=2048
 gallery-assets:
@@ -48,31 +49,31 @@ gallery-assets:
 	count=0; \
 	for f in "$(NIGHTLY_MAPS_DIR)"/*-overlay.png; do \
 		[ -f "$$f" ] || continue; \
-		sips -Z $(GALLERY_MAX_DIM) "$$f" --out "$(GALLERY_DIR)/$$(basename "$$f")" >/dev/null; \
+		sips -Z $(GALLERY_MAX_DIM) -s format jpeg -s formatOptions $(GALLERY_JPEG_QUALITY) "$$f" --out "$(GALLERY_DIR)/$$(basename "$$f" .png).jpg" >/dev/null; \
 		count=$$((count+1)); \
 	done; \
 	if [ $$count -eq 0 ]; then echo "No overlay PNGs found in $(NIGHTLY_MAPS_DIR)"; exit 1; fi; \
 	echo "Wrote $$count overlays to $(GALLERY_DIR)"; \
 	du -sh "$(GALLERY_DIR)"
 
-# Upload $(GALLERY_DIR)/*.png as assets on a GitHub release. Requires `gh`.
+# Upload $(GALLERY_DIR)/*.jpg as assets on a GitHub release. Requires `gh`.
 # Usage: make publish-gallery GALLERY_TAG=gallery-v1
 publish-gallery:
 	@command -v gh >/dev/null 2>&1 || { echo "gh CLI not found"; exit 1; }
 	@if [ -z "$(GALLERY_TAG)" ]; then echo "GALLERY_TAG is required, e.g. make publish-gallery GALLERY_TAG=gallery-v1"; exit 1; fi
 	@set -e; \
-	if ! ls "$(GALLERY_DIR)"/*-overlay.png >/dev/null 2>&1; then \
+	if ! ls "$(GALLERY_DIR)"/*-overlay.jpg >/dev/null 2>&1; then \
 		echo "No gallery assets in $(GALLERY_DIR); run 'make gallery-assets' first"; exit 1; \
 	fi; \
 	if gh release view "$(GALLERY_TAG)" >/dev/null 2>&1; then \
-		gh release upload "$(GALLERY_TAG)" --clobber "$(GALLERY_DIR)"/*-overlay.png; \
+		gh release upload "$(GALLERY_TAG)" --clobber "$(GALLERY_DIR)"/*-overlay.jpg; \
 	else \
 		gh release create "$(GALLERY_TAG)" \
 			--title "Map overlay gallery $(GALLERY_TAG)" \
 			--notes "Regenerated debug overlays for README gallery." \
-			"$(GALLERY_DIR)"/*-overlay.png; \
+			"$(GALLERY_DIR)"/*-overlay.jpg; \
 	fi; \
-	echo "Assets available at https://github.com/marianogappa/scmapanalyzer/releases/download/$(GALLERY_TAG)/<name>-overlay.png"
+	echo "Assets available at https://github.com/marianogappa/scmapanalyzer/releases/download/$(GALLERY_TAG)/<name>-overlay.jpg"
 
 # Promote nightly map analysis into lib/scmapanalyzer/cache/maps.
 publish-maps:
