@@ -21,6 +21,8 @@ type MiniTileGrid struct {
 	Width  int
 	Height int
 	Data   []uint8 // each cell: feature nibble (see Feature* constants)
+	// Elevation is the ground level per minitile: 0 = low, 1 = mid, 2 = high.
+	Elevation []uint8
 }
 
 func (g *MiniTileGrid) FeatureAt(x, y int) uint8 {
@@ -44,14 +46,22 @@ func (t *tileFeatures) get(nibbleIndex int) uint8 {
 }
 
 func loadTileFeatures(fsys fs.FS, tilesetFolder string) (*tileFeatures, error) {
+	return loadNibbleFile(fsys, tilesetFolder, "features.bin", "SMF1")
+}
+
+func loadTileElevation(fsys fs.FS, tilesetFolder string) (*tileFeatures, error) {
+	return loadNibbleFile(fsys, tilesetFolder, "elevation.bin", "SME1")
+}
+
+func loadNibbleFile(fsys fs.FS, tilesetFolder, file, magic string) (*tileFeatures, error) {
 	t := strings.ToLower(tilesetFolder)
-	p := path.Join("data", "tilesets", t, "features.bin")
+	p := path.Join("data", "tilesets", t, file)
 	b, err := fs.ReadFile(fsys, p)
 	if err != nil {
-		return nil, fmt.Errorf("read features %s: %w", p, err)
+		return nil, fmt.Errorf("read %s: %w", p, err)
 	}
-	if len(b) < 8 || string(b[0:4]) != "SMF1" {
-		return nil, errors.New("invalid features file")
+	if len(b) < 8 || string(b[0:4]) != magic {
+		return nil, fmt.Errorf("invalid %s", file)
 	}
 	tileCount := int(binary.LittleEndian.Uint32(b[4:8]))
 	payload := b[8:]
@@ -74,9 +84,14 @@ func BuildMiniTileGrid(tilesetFolder string, width, height int, tiles []uint16) 
 	if err != nil {
 		return nil, err
 	}
+	te, err := loadTileElevation(assets, tilesetFolder)
+	if err != nil {
+		return nil, err
+	}
 	gridW := width * 4
 	gridH := height * 4
 	data := make([]uint8, gridW*gridH)
+	elevation := make([]uint8, gridW*gridH)
 
 	for ty := 0; ty < height; ty++ {
 		for tx := 0; tx < width; tx++ {
@@ -87,11 +102,12 @@ func BuildMiniTileGrid(tilesetFolder string, width, height int, tiles []uint16) 
 			baseNib := tileID * 16
 			for my := 0; my < 4; my++ {
 				for mx := 0; mx < 4; mx++ {
-					v := tf.get(baseNib + my*4 + mx)
-					data[(ty*4+my)*gridW+(tx*4+mx)] = v
+					i := (ty*4+my)*gridW + (tx*4 + mx)
+					data[i] = tf.get(baseNib + my*4 + mx)
+					elevation[i] = te.get(baseNib + my*4 + mx)
 				}
 			}
 		}
 	}
-	return &MiniTileGrid{Width: gridW, Height: gridH, Data: data}, nil
+	return &MiniTileGrid{Width: gridW, Height: gridH, Data: data, Elevation: elevation}, nil
 }

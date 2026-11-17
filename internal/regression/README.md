@@ -9,11 +9,13 @@ pipeline over the `.rep` files in `replays/`, one per unique map.
 **Semantic invariants** — `invariants_test.go`, `TestSemanticInvariants`.
 A hand-written table of what is simply right or wrong per map: start count,
 expansion count, number of bases in the center circle, every start has a
-natural. Never auto-generated. This is the contract; edit it on purpose, in
+natural, and how many starts have a choke leading straight into their natural.
+Never auto-generated. This is the contract; edit it on purpose, in
 review.
 
 **Geometry golden** — `golden_test.go`, `TestGoldenGeometry`. Compares each
-base's center and polygon against `testdata/golden/<map>.json` with tolerance:
+base against `testdata/golden/<map>.json`: identity (name, kind, clock, center,
+mineral-only, natural) must match exactly; geometry is compared with tolerance:
 center drift ≤ `maxCenterDistTiles`, polygon overlap `IoU ≥ minIoU`. Absorbs
 harmless vertex jitter; catches a region that actually moved or collapsed.
 

@@ -18,6 +18,18 @@ type BasePolygon struct {
 	PolygonVertices  []TilePoint `json:"polygon_vertices"`
 	MineralOnly      bool        `json:"mineral_only"`
 	NaturalExpansion string      `json:"natural_expansion,omitempty"`
+	// Chokes are the narrow passages out of this base's terrain area, e.g. a
+	// main's ramp or a natural's wall-off point.
+	Chokes []Choke `json:"chokes,omitempty"`
+}
+
+// Choke is a passage crossing, in minitile coordinates: Ends span it wall to
+// wall, Center is its narrowest point and Width its length in minitiles.
+type Choke struct {
+	Center     TilePoint    `json:"center"`
+	Ends       [2]TilePoint `json:"ends"`
+	Width      int          `json:"width"`
+	ConnectsTo string       `json:"connects_to,omitempty"`
 }
 
 type Result struct {

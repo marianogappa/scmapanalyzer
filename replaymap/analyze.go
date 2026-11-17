@@ -4,7 +4,6 @@ import (
 	"container/list"
 	"errors"
 	"math"
-	"sort"
 
 	"github.com/marianogappa/scmapanalyzer/internal/basedetect"
 	"github.com/marianogappa/scmapanalyzer/internal/mapgfx"
@@ -12,25 +11,14 @@ import (
 )
 
 const (
-	// startOwnerNone marks tiles that are nearest to an expansion base, not a start base.
-	// We use -1 because owner indices are otherwise 0..N-1.
-	startOwnerNone = -1
-
-	// startClearanceTiles keeps masks at least this many tiles away from
-	// wall/ramp barriers when region growing. Increase to make regions tighter.
-	startClearanceTiles = 1
-
-	// startEdgeClearance reserves a margin from map edges.
-	// Keep at 0 unless edge bleeding appears in generated polygons.
-	startEdgeClearance = 0
-
-	// seedSearchRadius is how far from the center we scan for a valid seed tile
-	// when the rounded center is blocked by clearance/ownership constraints.
-	seedSearchRadius = 10
-
-	// passableSeedSearchRadius is similar to seedSearchRadius but for pathing BFS
-	// (natural detection), where we only need a passable tile near a center.
+	// passableSeedSearchRadius is how far from a base center we scan for a
+	// passable tile to start pathing or region growth from.
 	passableSeedSearchRadius = 12
+
+	// geyserReachPx is how far (pixels) a geyser may sit from a base's resource
+	// center and still be that base's gas. Across the regression corpus real
+	// gas sits at <=391px and the nearest foreign geyser at >=416px.
+	geyserReachPx = 400
 )
 
 type point struct {
@@ -62,37 +50,20 @@ func Analyze(meta *model.MapMetadata) (*AnalyzeOutput, error) {
 		return nil, errors.New("no bases detected")
 	}
 
-	wallRampBarrier, edgeBarrier, wallOnlyBar, rampForbidden := barriersFromMiniTileGrid(w, h, grid.Data)
-	distWR := distanceToBarrier(w, h, wallRampBarrier)
-	distEdge := distanceToBarrier(w, h, edgeBarrier)
-	distWallClear := distanceToBarrier(w, h, wallOnlyBar)
-
-	startBaseIdx, _, startCenters, expaCenters := splitBases(bases)
+	startBaseIdx, expaBaseIdx, startCenters, expaCenters := splitBases(bases)
 	if len(startCenters) == 0 || len(expaCenters) == 0 {
 		return nil, errors.New("expected both starts and expansions")
 	}
 
-	startOwners := assignNearestStartAmongAllBases(w, h, bases, startBaseIdx)
-	expaOwners := assignNearest(w, h, expaCenters)
-	maskOut, maskErr := buildRegionMasks(buildRegionMasksInput{
-		Width:           w,
-		Height:          h,
-		DistWR:          distWR,
-		DistEdge:        distEdge,
-		DistWallOnly:    distWallClear,
-		WallRampBarrier: wallRampBarrier,
-		WallOnlyBarrier: wallOnlyBar,
-		StartOwners:     startOwners,
-		ExpaOwners:      expaOwners,
-		StartCenters:    startCenters,
-		ExpaCenters:     expaCenters,
-		RampForbidden:   rampForbidden,
-	})
-	if maskErr != nil {
-		return nil, maskErr
+	terrain := computeTerrainAreas(w, h, grid.Data, grid.Elevation)
+	seeds := make([]baseSeed, 0, len(startCenters)+len(expaCenters))
+	for _, c := range startCenters {
+		seeds = append(seeds, baseSeed{Center: c, Start: true})
 	}
-	startMasks := maskOut.StartMasks
-	expaMasks := maskOut.ExpaMasks
+	for _, c := range expaCenters {
+		seeds = append(seeds, baseSeed{Center: c})
+	}
+	regions := buildBaseRegions(terrain, seeds)
 
 	naturalBlocked := naturalBlockedMask(w, h, grid.Data)
 	naturals := computeNaturals(w, h, naturalBlocked, startCenters, expaCenters)
@@ -100,29 +71,29 @@ func Analyze(meta *model.MapMetadata) (*AnalyzeOutput, error) {
 	startPolys := make([]BasePolygon, len(startCenters))
 	for i := range startCenters {
 		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(startCenters[i].X*8)), int(math.Round(startCenters[i].Y*8)))
-		startMask := startMasks[i]
 		startPolys[i] = BasePolygon{
 			Name:            "start " + itoa(clock),
 			Kind:            "start",
 			Clock:           clock,
 			CenterTile:      TilePoint{X: int(math.Round(startCenters[i].X)), Y: int(math.Round(startCenters[i].Y))},
-			PolygonVertices: maskToPolygon(w, h, startMask),
-			MineralOnly:     mineralOnlyMask(w, h, startMask, meta.Geysers),
+			PolygonVertices: maskOutline(w, h, regions.Masks[i]),
+			MineralOnly:     mineralOnly(bases, startBaseIdx[i], meta.Geysers),
 		}
 	}
 
 	expaPolys := make([]BasePolygon, len(expaCenters))
 	for i := range expaCenters {
 		clock := oclock(meta.WidthTiles, meta.HeightTiles, int(math.Round(expaCenters[i].X*8)), int(math.Round(expaCenters[i].Y*8)))
-		expaMask := expaMasks[i]
 		expaPolys[i] = BasePolygon{
 			Clock:           clock,
 			CenterTile:      TilePoint{X: int(math.Round(expaCenters[i].X)), Y: int(math.Round(expaCenters[i].Y))},
-			PolygonVertices: maskToPolygon(w, h, expaMask),
-			MineralOnly:     mineralOnlyMask(w, h, expaMask, meta.Geysers),
+			PolygonVertices: maskOutline(w, h, regions.Masks[len(startCenters)+i]),
+			MineralOnly:     mineralOnly(bases, expaBaseIdx[i], meta.Geysers),
 		}
 	}
-	nameExpansionBases(meta, w, h, expaPolys, expaMasks, startCenters, expaCenters, naturals)
+	nameExpansionBases(meta, w, h, expaPolys, regions.Masks[len(startCenters):], startCenters, expaCenters, naturals)
+
+	attachChokes(regions, startPolys, expaPolys)
 
 	for _, l := range naturals {
 		if l.StartIndex >= 0 && l.StartIndex < len(startPolys) && l.ExpaIndex >= 0 && l.ExpaIndex < len(expaPolys) {
@@ -150,8 +121,8 @@ func Analyze(meta *model.MapMetadata) (*AnalyzeOutput, error) {
 		Debug: &DebugData{
 			WidthMinitiles:  w,
 			HeightMinitiles: h,
-			StartMasks:      startMasks,
-			ExpaMasks:       expaMasks,
+			StartMasks:      regions.Masks[:len(startCenters)],
+			ExpaMasks:       regions.Masks[len(startCenters):],
 			NaturalLinks:    naturals,
 			WallMask:        wallMask,
 			RampMask:        rampMask,
@@ -178,35 +149,6 @@ func splitBases(bases []model.Base) ([]int, []int, []point, []point) {
 	return startIdx, expaIdx, startCenters, expaCenters
 }
 
-func barriersFromMiniTileGrid(width, height int, data []uint8) (wallRamp, edge, wallOnly, rampForbidden []bool) {
-	n := width * height
-	wallRamp = make([]bool, n)
-	edge = make([]bool, n)
-	wallOnly = make([]bool, n)
-	rampForbidden = make([]bool, n)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			idx := y*width + x
-			if x == 0 || y == 0 || x == width-1 || y == height-1 {
-				edge[idx] = true
-			}
-			f := data[idx] & 0x0F
-			walk := (f & mapgfx.FeatureWalkable) != 0
-			ramp := (f & mapgfx.FeatureRamp) != 0
-			if !walk || ramp {
-				wallRamp[idx] = true
-			}
-			if !walk && !ramp {
-				wallOnly[idx] = true
-			}
-			if ramp {
-				rampForbidden[idx] = true
-			}
-		}
-	}
-	return wallRamp, edge, wallOnly, rampForbidden
-}
-
 func naturalBlockedMask(width, height int, data []uint8) []bool {
 	out := make([]bool, width*height)
 	for y := 0; y < height; y++ {
@@ -223,183 +165,6 @@ func naturalBlockedMask(width, height int, data []uint8) []bool {
 		}
 	}
 	return out
-}
-
-func combineMasks(size int, masks [][]bool) []bool {
-	out := make([]bool, size)
-	for _, m := range masks {
-		for i, v := range m {
-			if v {
-				out[i] = true
-			}
-		}
-	}
-	return out
-}
-
-func distanceToBarrier(width int, height int, barrier []bool) []int {
-	const inf = int(^uint(0) >> 1)
-	dist := make([]int, width*height)
-	q := list.New()
-	for i := range dist {
-		if barrier[i] {
-			dist[i] = 0
-			q.PushBack(i)
-			continue
-		}
-		dist[i] = inf
-	}
-	for q.Len() > 0 {
-		e := q.Front()
-		q.Remove(e)
-		idx := e.Value.(int)
-		x := idx % width
-		y := idx / width
-		nextD := dist[idx] + 1
-		for _, n := range [][2]int{{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}} {
-			nx, ny := n[0], n[1]
-			if nx < 0 || ny < 0 || nx >= width || ny >= height {
-				continue
-			}
-			nidx := ny*width + nx
-			if nextD < dist[nidx] {
-				dist[nidx] = nextD
-				q.PushBack(nidx)
-			}
-		}
-	}
-	return dist
-}
-
-func assignNearest(width int, height int, centers []point) []int {
-	owners := make([]int, width*height)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			px := float64(x) + 0.5
-			py := float64(y) + 0.5
-			best := 0
-			bestD := math.MaxFloat64
-			for i, c := range centers {
-				dx := c.X - px
-				dy := c.Y - py
-				d := dx*dx + dy*dy
-				if d < bestD {
-					bestD = d
-					best = i
-				}
-			}
-			owners[y*width+x] = best
-		}
-	}
-	return owners
-}
-
-// assignNearestStartAmongAllBases assigns each tile to the nearest detected base (start or expansion).
-// Tiles whose nearest base is an expansion get startOwnerNone so starting regions cannot grow over them.
-func assignNearestStartAmongAllBases(width int, height int, bases []model.Base, startOrderedBaseIdx []int) []int {
-	centers := make([]point, len(bases))
-	for i, b := range bases {
-		centers[i] = point{X: b.CenterX / 8.0, Y: b.CenterY / 8.0}
-	}
-	baseToStartOrd := make([]int, len(bases))
-	for i := range baseToStartOrd {
-		baseToStartOrd[i] = startOwnerNone
-	}
-	for si, bi := range startOrderedBaseIdx {
-		baseToStartOrd[bi] = si
-	}
-	owners := make([]int, width*height)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			px := float64(x) + 0.5
-			py := float64(y) + 0.5
-			best := -1
-			bestD := math.MaxFloat64
-			for i, c := range centers {
-				dx := c.X - px
-				dy := c.Y - py
-				d := dx*dx + dy*dy
-				if d < bestD {
-					bestD = d
-					best = i
-				}
-			}
-			if best < 0 {
-				owners[y*width+x] = startOwnerNone
-				continue
-			}
-			owners[y*width+x] = baseToStartOrd[best]
-		}
-	}
-	return owners
-}
-
-func growRegionsWithClearance(width int, height int, owners []int, distClear []int, distEdge []int, centers []point, clearance int, edgeClearance int, forbidden []bool) [][]bool {
-	regions := make([][]bool, len(centers))
-	for i := range centers {
-		regions[i] = growSingleRegionWithClearance(width, height, i, owners, distClear, distEdge, centers[i], clearance, edgeClearance, forbidden)
-	}
-	return regions
-}
-
-func growSingleRegionWithClearance(width int, height int, owner int, owners []int, distClear []int, distEdge []int, center point, clearance int, edgeClearance int, forbidden []bool) []bool {
-	mask := make([]bool, width*height)
-	seedX := clampInt(int(math.Round(center.X)), 0, width-1)
-	seedY := clampInt(int(math.Round(center.Y)), 0, height-1)
-	seedX, seedY, ok := findSeed(width, height, owners, distClear, distEdge, owner, seedX, seedY, clearance, edgeClearance, forbidden)
-	if !ok {
-		return mask
-	}
-	queue := []int{seedY*width + seedX}
-	mask[seedY*width+seedX] = true
-	for q := 0; q < len(queue); q++ {
-		idx := queue[q]
-		x := idx % width
-		y := idx / width
-		for _, n := range [][2]int{{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}} {
-			nx, ny := n[0], n[1]
-			if nx < 0 || ny < 0 || nx >= width || ny >= height {
-				continue
-			}
-			nidx := ny*width + nx
-			if mask[nidx] || owners[nidx] != owner {
-				continue
-			}
-			if distClear[nidx] <= clearance || distEdge[nidx] <= edgeClearance {
-				continue
-			}
-			if forbidden != nil && forbidden[nidx] {
-				continue
-			}
-			mask[nidx] = true
-			queue = append(queue, nidx)
-		}
-	}
-	return mask
-}
-
-func findSeed(width int, height int, owners []int, distClear []int, distEdge []int, owner int, x int, y int, clearance int, edgeClearance int, forbidden []bool) (int, int, bool) {
-	for r := 0; r <= seedSearchRadius; r++ {
-		for yy := y - r; yy <= y+r; yy++ {
-			for xx := x - r; xx <= x+r; xx++ {
-				if xx < 0 || yy < 0 || xx >= width || yy >= height {
-					continue
-				}
-				idx := yy*width + xx
-				if owners[idx] != owner {
-					continue
-				}
-				if distClear[idx] <= clearance || distEdge[idx] <= edgeClearance {
-					continue
-				}
-				if forbidden != nil && forbidden[idx] {
-					continue
-				}
-				return xx, yy, true
-			}
-		}
-	}
-	return 0, 0, false
 }
 
 func computeNaturals(width int, height int, blocked []bool, starts []point, expas []point) []NaturalLink {
@@ -512,49 +277,6 @@ func reconstructPath(width int, prev []int, sx int, sy int, tx int, ty int) []Ti
 	return out
 }
 
-func maskToPolygon(width int, height int, mask []bool) []TilePoint {
-	if len(mask) == 0 {
-		return nil
-	}
-	boundary := []TilePoint{}
-	cx := 0.0
-	cy := 0.0
-	count := 0.0
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			idx := y*width + x
-			if !mask[idx] {
-				continue
-			}
-			count++
-			cx += float64(x)
-			cy += float64(y)
-			isBoundary := x == 0 || y == 0 || x == width-1 || y == height-1
-			if !isBoundary {
-				if !mask[idx-1] || !mask[idx+1] || !mask[idx-width] || !mask[idx+width] {
-					isBoundary = true
-				}
-			}
-			if isBoundary {
-				boundary = append(boundary, TilePoint{X: x, Y: y})
-			}
-		}
-	}
-	if len(boundary) == 0 {
-		return nil
-	}
-	if count > 0 {
-		cx /= count
-		cy /= count
-	}
-	sort.Slice(boundary, func(i int, j int) bool {
-		ai := math.Atan2(float64(boundary[i].Y)-cy, float64(boundary[i].X)-cx)
-		aj := math.Atan2(float64(boundary[j].Y)-cy, float64(boundary[j].X)-cx)
-		return ai < aj
-	})
-	return boundary
-}
-
 func oclock(widthTiles int, heightTiles int, x int, y int) int {
 	angle := rayAngleDegrees(widthTiles, heightTiles, x, y)
 	switch {
@@ -575,37 +297,6 @@ func oclock(widthTiles int, heightTiles int, x int, y int) int {
 	default:
 		return 1
 	}
-}
-
-func regionAreas(regions [][]bool) []int {
-	out := make([]int, len(regions))
-	for i, m := range regions {
-		out[i] = countMask(m)
-	}
-	return out
-}
-
-func countMask(mask []bool) int {
-	c := 0
-	for _, v := range mask {
-		if v {
-			c++
-		}
-	}
-	return c
-}
-
-func minPositive(values []int) int {
-	best := 0
-	for _, v := range values {
-		if v <= 0 {
-			continue
-		}
-		if best == 0 || v < best {
-			best = v
-		}
-	}
-	return best
 }
 
 func clampInt(v int, lo int, hi int) int {
@@ -641,19 +332,39 @@ func itoa(v int) string {
 	return string(digits)
 }
 
-func mineralOnlyMask(width int, height int, mask []bool, geysers []model.MapResource) bool {
+// mineralOnly reports whether no geyser belongs to the base: a geyser belongs
+// to the base whose resource cluster center is nearest, if within reach.
+func mineralOnly(bases []model.Base, base int, geysers []model.MapResource) bool {
 	for _, g := range geysers {
-		gx := clampInt(int(math.Round(float64(g.X)/8.0)), 0, width-1)
-		gy := clampInt(int(math.Round(float64(g.Y)/8.0)), 0, height-1)
-		for oy := -1; oy <= 1; oy++ {
-			for ox := -1; ox <= 1; ox++ {
-				tx := clampInt(gx+ox, 0, width-1)
-				ty := clampInt(gy+oy, 0, height-1)
-				if mask[ty*width+tx] {
-					return false
-				}
+		gx, gy := float64(g.X), float64(g.Y)
+		nearest, best := -1, math.MaxFloat64
+		for i, b := range bases {
+			if d := math.Hypot(b.CenterX-gx, b.CenterY-gy); d < best {
+				nearest, best = i, d
 			}
+		}
+		if nearest == base && best <= geyserReachPx {
+			return false
 		}
 	}
 	return true
+}
+
+func attachChokes(regions *baseRegions, starts, expas []BasePolygon) {
+	at := func(i int) *BasePolygon {
+		if i < len(starts) {
+			return &starts[i]
+		}
+		return &expas[i-len(starts)]
+	}
+	for i, segs := range regions.Chokes {
+		b := at(i)
+		for _, s := range segs {
+			c := Choke{Center: s.Center, Ends: [2]TilePoint{s.A, s.B}, Width: int(math.Round(s.Width))}
+			if s.OtherBase >= 0 {
+				c.ConnectsTo = at(s.OtherBase).Name
+			}
+			b.Chokes = append(b.Chokes, c)
+		}
+	}
 }
